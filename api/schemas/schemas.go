@@ -321,9 +321,9 @@ type V1Radacct struct {
 	NASIPAddress        string  `json:"nasipaddress"`
 	NASPortID           string  `json:"nasportid"`
 	NASPortType         string  `json:"nasporttype"`
-	AcctStartTime       *string `json:"acctstarttime,omitempty"`
-	AcctUpdateTime      *string `json:"acctupdatetime,omitempty"`
-	AcctStopTime        *string `json:"acctstoptime,omitempty"`
+	AcctStartTime       *string `json:"acctstarttime"`
+	AcctUpdateTime      *string `json:"acctupdatetime"`
+	AcctStopTime        *string `json:"acctstoptime"`
 	AcctInterval        int     `json:"acctinterval"`
 	AcctSessionTime     int     `json:"acctsessiontime"`
 	AcctAuthentic       string  `json:"acctauthentic"`
@@ -343,7 +343,7 @@ type V1Radacct struct {
 type V1UserStatus struct {
 	Username string     `json:"username"`
 	Online   bool       `json:"online"`
-	Session  *V1Radacct `json:"session,omitempty"`
+	Session  *V1Radacct `json:"session"`
 }
 
 type V1DisconnectRequest struct {
