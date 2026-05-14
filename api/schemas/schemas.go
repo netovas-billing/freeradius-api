@@ -237,3 +237,127 @@ type WebhookCreatedResponse struct {
 	URL    string `json:"url"`
 	Secret string `json:"secret" example:"shown ONLY once — store it securely"`
 }
+
+// ====== Legacy /api/v1/* compatibility schemas (nasvpntest-api) ======
+//
+// Mengikuti shape FastAPI lama: row mentah dengan field id di akhir.
+
+type V1RowIn struct {
+	Username  string `json:"username,omitempty"`
+	Groupname string `json:"groupname,omitempty"`
+	Attribute string `json:"attribute,omitempty"`
+	Op        string `json:"op,omitempty"`
+	Value     string `json:"value,omitempty"`
+	Priority  *int   `json:"priority,omitempty"`
+}
+
+type V1Radcheck struct {
+	Username  string `json:"username"`
+	Attribute string `json:"attribute"`
+	Op        string `json:"op"`
+	Value     string `json:"value"`
+	ID        uint   `json:"id"`
+}
+
+type V1Radreply struct {
+	Username  string `json:"username"`
+	Attribute string `json:"attribute"`
+	Op        string `json:"op"`
+	Value     string `json:"value"`
+	ID        uint   `json:"id"`
+}
+
+type V1Radgroupcheck struct {
+	Groupname string `json:"groupname"`
+	Attribute string `json:"attribute"`
+	Op        string `json:"op"`
+	Value     string `json:"value"`
+	ID        uint   `json:"id"`
+}
+
+type V1Radgroupreply struct {
+	Groupname string `json:"groupname"`
+	Attribute string `json:"attribute"`
+	Op        string `json:"op"`
+	Value     string `json:"value"`
+	ID        uint   `json:"id"`
+}
+
+type V1Radusergroup struct {
+	Username  string `json:"username"`
+	Groupname string `json:"groupname"`
+	Priority  int    `json:"priority"`
+	ID        uint   `json:"id"`
+}
+
+type V1NAS struct {
+	NASName     string `json:"nasname"`
+	ShortName   string `json:"shortname"`
+	Type        string `json:"type"`
+	Ports       int    `json:"ports"`
+	Secret      string `json:"secret"`
+	Server      string `json:"server"`
+	Community   string `json:"community"`
+	Description string `json:"description"`
+	ID          uint   `json:"id"`
+}
+
+type V1NASCreate struct {
+	NASName     string `json:"nasname"`
+	ShortName   string `json:"shortname,omitempty"`
+	Type        string `json:"type,omitempty"`
+	Ports       int    `json:"ports,omitempty"`
+	Secret      string `json:"secret"`
+	Server      string `json:"server,omitempty"`
+	Community   string `json:"community,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type V1Radacct struct {
+	AcctSessionID       string  `json:"acctsessionid"`
+	AcctUniqueID        string  `json:"acctuniqueid"`
+	Username            string  `json:"username"`
+	Realm               string  `json:"realm"`
+	NASIPAddress        string  `json:"nasipaddress"`
+	NASPortID           string  `json:"nasportid"`
+	NASPortType         string  `json:"nasporttype"`
+	AcctStartTime       *string `json:"acctstarttime,omitempty"`
+	AcctUpdateTime      *string `json:"acctupdatetime,omitempty"`
+	AcctStopTime        *string `json:"acctstoptime,omitempty"`
+	AcctInterval        int     `json:"acctinterval"`
+	AcctSessionTime     int     `json:"acctsessiontime"`
+	AcctAuthentic       string  `json:"acctauthentic"`
+	ConnectInfoStart    string  `json:"connectinfo_start"`
+	ConnectInfoStop     string  `json:"connectinfo_stop"`
+	AcctInputOctets     int64   `json:"acctinputoctets"`
+	AcctOutputOctets    int64   `json:"acctoutputoctets"`
+	CalledStationID     string  `json:"calledstationid"`
+	CallingStationID    string  `json:"callingstationid"`
+	AcctTerminateCause  string  `json:"acctterminatecause"`
+	ServiceType         string  `json:"servicetype"`
+	FramedProtocol      string  `json:"framedprotocol"`
+	FramedIPAddress     string  `json:"framedipaddress"`
+	RadAcctID           uint64  `json:"radacctid"`
+}
+
+type V1UserStatus struct {
+	Username string     `json:"username"`
+	Online   bool       `json:"online"`
+	Session  *V1Radacct `json:"session,omitempty"`
+}
+
+type V1DisconnectRequest struct {
+	Username     string `json:"username"`
+	NASIPAddress string `json:"nas_ip_address,omitempty"`
+	Port         int    `json:"port,omitempty"`
+	TimeoutMs    int    `json:"timeout_ms,omitempty"`
+}
+
+type V1DisconnectResponse struct {
+	Status        string `json:"status"`
+	Code          string `json:"code"`
+	Username      string `json:"username"`
+	NASIPAddress  string `json:"nasipaddress"`
+	Port          int    `json:"port"`
+	AcctSessionID string `json:"acctsessionid"`
+}

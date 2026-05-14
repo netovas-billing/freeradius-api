@@ -46,7 +46,24 @@ import (
 // @tag.name audit
 // @tag.description API access audit log (admin only)
 // @tag.name meta
-// @tag.description Healthcheck
+// @tag.description Healthcheck & root
+//
+// @tag.name v1-users
+// @tag.description Legacy /api/v1/users — radcheck row-level CRUD (nasvpntest-api compat)
+// @tag.name v1-radusergroup
+// @tag.description Legacy /api/v1/user-group/ — radusergroup row CRUD
+// @tag.name v1-radgroupreply
+// @tag.description Legacy /api/v1/group/ — radgroupreply row CRUD
+// @tag.name v1-radgroupcheck
+// @tag.description Legacy /api/v1/group-check/ — radgroupcheck row CRUD
+// @tag.name v1-radreply
+// @tag.description Legacy /api/v1/reply/ — radreply row CRUD
+// @tag.name v1-nas
+// @tag.description Legacy /api/v1/nas/ — NAS row CRUD (secret exposed)
+// @tag.name v1-radacct
+// @tag.description Legacy /api/v1/radacct/ — accounting read + user status
+// @tag.name v1-disconnect
+// @tag.description Legacy /api/v1/disconnect — kick user by username
 //
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
@@ -65,6 +82,7 @@ func main() {
 	app.Use(recover.New())
 	app.Use(logger.New())
 
+	app.Get("/", handlers.Root)
 	app.Get("/health", handlers.Health)
 	app.Get("/docs/*", fiberSwagger.HandlerDefault)
 
@@ -75,6 +93,7 @@ func main() {
 		middleware.Audit,
 	)
 
+	// Modern endpoints
 	handlers.RegisterUsers(api)
 	handlers.RegisterBulk(api)
 	handlers.RegisterGroups(api)
@@ -84,6 +103,9 @@ func main() {
 	handlers.RegisterSessions(api)
 	handlers.RegisterStats(api)
 	handlers.RegisterIPPool(api)
+
+	// Legacy v1 endpoints (nasvpntest-api compat)
+	handlers.RegisterV1(api)
 
 	adminOnly := api.Group("", middleware.RequireAdmin)
 	handlers.RegisterKeys(adminOnly)

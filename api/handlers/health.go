@@ -22,3 +22,21 @@ func Health(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"status": "ok"})
 }
+
+// Root godoc
+// @Summary Root info
+// @Tags meta
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router / [get]
+func Root(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"name":    "freeradius-api",
+		"version": "0.3.0",
+		"docs":    "/docs/index.html",
+		"apis": fiber.Map{
+			"v1":      "/api/v1/*  (legacy, nasvpntest-api compatible)",
+			"current": "/api/*     (modern, composite responses, multi-key, scope, audit)",
+		},
+	})
+}
