@@ -1,0 +1,8 @@
+.env
+freeradius/raddb/
+
+# Go
+api/docs/
+api/freeradius-api
+api/*.test
+api/vendor/

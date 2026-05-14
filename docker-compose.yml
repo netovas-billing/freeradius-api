@@ -1,0 +1,53 @@
+services:
+  db:
+    image: mariadb:11.4
+    container_name: radius-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-rootpass_ganti}
+      MARIADB_DATABASE: ${DB_NAME:-radius}
+      MARIADB_USER: ${DB_USER:-radius}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-radiuspass_ganti}
+    volumes:
+      - radius_db:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$${MARIADB_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  freeradius:
+    image: freeradius/freeradius-server:latest
+    container_name: freeradius
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "1812:1812/udp"
+      - "1813:1813/udp"
+    volumes:
+      - ./freeradius/raddb:/etc/raddb:ro
+    command: ["-X"]
+
+  api:
+    build: ./api
+    container_name: freeradius-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: ${DB_USER:-radius}
+      DB_PASSWORD: ${DB_PASSWORD:-radiuspass_ganti}
+      DB_NAME: ${DB_NAME:-radius}
+      API_KEY: ${API_KEY:-change-me-to-a-long-random-string}
+    ports:
+      - "8000:8000"
+
+volumes:
+  radius_db:
+    name: freeradius_mariadb_data
