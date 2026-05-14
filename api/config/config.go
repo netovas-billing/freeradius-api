@@ -16,6 +16,9 @@ var (
 	DBName     string
 	APIKey     string
 
+	BasicAuthUser     string
+	BasicAuthPassword string
+
 	RateLimitMax           int
 	RateLimitWindowSeconds int
 
@@ -31,6 +34,9 @@ func Load() {
 	DBPassword = getenv("DB_PASSWORD", "radiuspass_ganti")
 	DBName = getenv("DB_NAME", "radius")
 	APIKey = getenv("API_KEY", "change-me-to-a-long-random-string")
+
+	BasicAuthUser = getenv("BASIC_AUTH_USER", "")
+	BasicAuthPassword = getenv("BASIC_AUTH_PASSWORD", "")
 
 	RateLimitMax = getenvInt("RATE_LIMIT_MAX", 120)
 	RateLimitWindowSeconds = getenvInt("RATE_LIMIT_WINDOW_SECONDS", 60)

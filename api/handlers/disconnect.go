@@ -32,6 +32,7 @@ const defaultCoAPort = 3799
 // @Description to the NAS over UDP. Returns the NAS response (ACK / NAK / timeout).
 // @Tags sessions
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param acctuniqueid path string true "radacct.acctuniqueid"

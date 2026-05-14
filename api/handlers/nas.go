@@ -21,6 +21,7 @@ func RegisterNAS(r fiber.Router) {
 // @Summary List NAS
 // @Tags nas
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Success 200 {array} models.NAS
 // @Router /api/nas [get]
@@ -34,6 +35,7 @@ func listNAS(c *fiber.Ctx) error {
 // @Summary Create NAS entry
 // @Tags nas
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.NASCreate true "NAS payload"
@@ -83,6 +85,7 @@ func createNAS(c *fiber.Ctx) error {
 // @Summary Get NAS detail
 // @Tags nas
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param id path int true "NAS ID"
 // @Success 200 {object} models.NAS
@@ -101,6 +104,7 @@ func getNAS(c *fiber.Ctx) error {
 // @Summary Update NAS (partial)
 // @Tags nas
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param id path int true "NAS ID"
@@ -152,6 +156,7 @@ func updateNAS(c *fiber.Ctx) error {
 // @Summary Delete NAS
 // @Tags nas
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param id path int true "NAS ID"
 // @Success 204
 // @Failure 404 {object} schemas.ErrorResponse

@@ -80,6 +80,7 @@ func buildUserOut(username string) (*schemas.UserOut, error) {
 // @Description Response sets X-Total-Count header.
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param q query string false "Substring on username (LIKE %q%)"
 // @Param group query string false "Only users in this group"
@@ -124,6 +125,7 @@ func listUsers(c *fiber.Ctx) error {
 // @Summary Create user
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.UserCreate true "User payload"
@@ -198,6 +200,7 @@ func createUser(c *fiber.Ctx) error {
 // @Summary Get user detail
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param username path string true "Username"
 // @Success 200 {object} schemas.UserOut
@@ -219,6 +222,7 @@ func getUser(c *fiber.Ctx) error {
 // @Summary Update user password
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param username path string true "Username"
@@ -255,6 +259,7 @@ func updatePassword(c *fiber.Ctx) error {
 // @Summary Delete user
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param username path string true "Username"
 // @Success 204
 // @Failure 404 {object} schemas.ErrorResponse
@@ -274,6 +279,7 @@ func deleteUser(c *fiber.Ctx) error {
 // @Summary Add check attribute
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param username path string true "Username"
@@ -300,6 +306,7 @@ func addCheckAttr(c *fiber.Ctx) error {
 // @Summary Add reply attribute
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param username path string true "Username"
@@ -326,6 +333,7 @@ func addReplyAttr(c *fiber.Ctx) error {
 // @Summary Update check attribute (partial)
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param username path string true "Username"
@@ -364,6 +372,7 @@ func updateCheckAttr(c *fiber.Ctx) error {
 // @Summary Update reply attribute (partial)
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param username path string true "Username"
@@ -402,6 +411,7 @@ func updateReplyAttr(c *fiber.Ctx) error {
 // @Summary Delete check attribute
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param username path string true "Username"
 // @Param id path int true "Attribute ID"
 // @Success 204
@@ -421,6 +431,7 @@ func deleteCheckAttr(c *fiber.Ctx) error {
 // @Summary Delete reply attribute
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param username path string true "Username"
 // @Param id path int true "Attribute ID"
 // @Success 204

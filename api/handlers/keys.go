@@ -28,6 +28,7 @@ func validScope(s string) bool {
 // @Summary List API keys (admin)
 // @Tags keys
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Success 200 {array} models.ApiKey
 // @Router /api/keys [get]
@@ -42,6 +43,7 @@ func listKeys(c *fiber.Ctx) error {
 // @Description Returns the raw key ONCE. Hash-nya yang disimpan; tidak bisa di-recover.
 // @Tags keys
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.ApiKeyCreate true "Key payload"
@@ -89,6 +91,7 @@ func createKey(c *fiber.Ctx) error {
 // @Summary Update API key (admin)
 // @Tags keys
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param id path int true "Key ID"
@@ -127,6 +130,7 @@ func updateKey(c *fiber.Ctx) error {
 // @Summary Delete API key (admin)
 // @Tags keys
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param id path int true "Key ID"
 // @Success 204
 // @Router /api/keys/{id} [delete]

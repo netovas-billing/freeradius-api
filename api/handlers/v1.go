@@ -184,6 +184,7 @@ func acctOut(r models.Radacct) schemas.V1Radacct {
 // @Summary Get Users (radcheck rows)
 // @Tags v1-users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param username query string false "Filter by username"
 // @Param attribute query string false "Filter by attribute"
@@ -217,6 +218,7 @@ func v1ListUsers(c *fiber.Ctx) error {
 // @Summary Create User (insert radcheck row)
 // @Tags v1-users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.V1RowIn true "Radcheck row"
@@ -244,6 +246,7 @@ func v1CreateUser(c *fiber.Ctx) error {
 // @Summary Get User (all radcheck rows for given username)
 // @Tags v1-users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param username path string true "Username"
 // @Success 200 {array} schemas.V1Radcheck
@@ -266,6 +269,7 @@ func v1GetUser(c *fiber.Ctx) error {
 // @Summary Update User (radcheck row by id)
 // @Tags v1-users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param user_id path int true "Radcheck row id"
@@ -304,6 +308,7 @@ func v1UpdateUser(c *fiber.Ctx) error {
 // @Summary Delete User (radcheck row by id)
 // @Tags v1-users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param user_id path int true "Radcheck row id"
 // @Success 204
 // @Router /api/v1/users/{user_id} [delete]
@@ -322,6 +327,7 @@ func v1DeleteUser(c *fiber.Ctx) error {
 // @Summary Get Radusergroup List
 // @Tags v1-radusergroup
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param username query string false "Filter by username"
 // @Param groupname query string false "Filter by group name"
@@ -355,6 +361,7 @@ func v1ListUserGroup(c *fiber.Ctx) error {
 // @Summary Create Radusergroup
 // @Tags v1-radusergroup
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.V1RowIn true "Radusergroup row {username, groupname, priority}"
@@ -383,6 +390,7 @@ func v1CreateUserGroup(c *fiber.Ctx) error {
 // @Summary Update Radusergroup
 // @Tags v1-radusergroup
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param group_id path int true "Row id"
@@ -418,6 +426,7 @@ func v1UpdateUserGroup(c *fiber.Ctx) error {
 // @Summary Delete Radusergroup
 // @Tags v1-radusergroup
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param group_id path int true "Row id"
 // @Success 204
 // @Router /api/v1/user-group/{group_id} [delete]
@@ -436,6 +445,7 @@ func v1DeleteUserGroup(c *fiber.Ctx) error {
 // @Summary Get Radgroupreply List
 // @Tags v1-radgroupreply
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param name query string false "Filter by group name"
 // @Param skip query int false "Skip"
@@ -465,6 +475,7 @@ func v1ListGroupReply(c *fiber.Ctx) error {
 // @Summary Create Radgroupreply
 // @Tags v1-radgroupreply
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.V1RowIn true "Row {groupname, attribute, op, value}"
@@ -492,6 +503,7 @@ func v1CreateGroupReply(c *fiber.Ctx) error {
 // @Summary Update Radgroupreply
 // @Tags v1-radgroupreply
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param group_id path int true "Row id"
@@ -530,6 +542,7 @@ func v1UpdateGroupReply(c *fiber.Ctx) error {
 // @Summary Delete Radgroupreply
 // @Tags v1-radgroupreply
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param group_id path int true "Row id"
 // @Success 204
 // @Router /api/v1/group/{group_id} [delete]
@@ -548,6 +561,7 @@ func v1DeleteGroupReply(c *fiber.Ctx) error {
 // @Summary Get Radgroupcheck List
 // @Tags v1-radgroupcheck
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param name query string false "Filter by group name"
 // @Param skip query int false "Skip"
@@ -577,6 +591,7 @@ func v1ListGroupCheck(c *fiber.Ctx) error {
 // @Summary Create Radgroupcheck
 // @Tags v1-radgroupcheck
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.V1RowIn true "Row {groupname, attribute, op, value}"
@@ -604,6 +619,7 @@ func v1CreateGroupCheck(c *fiber.Ctx) error {
 // @Summary Update Radgroupcheck
 // @Tags v1-radgroupcheck
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param group_id path int true "Row id"
@@ -642,6 +658,7 @@ func v1UpdateGroupCheck(c *fiber.Ctx) error {
 // @Summary Delete Radgroupcheck
 // @Tags v1-radgroupcheck
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param group_id path int true "Row id"
 // @Success 204
 // @Router /api/v1/group-check/{group_id} [delete]
@@ -660,6 +677,7 @@ func v1DeleteGroupCheck(c *fiber.Ctx) error {
 // @Summary Get Radreply List
 // @Tags v1-radreply
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param username query string false "Filter by username"
 // @Param attribute query string false "Filter by attribute"
@@ -693,6 +711,7 @@ func v1ListReply(c *fiber.Ctx) error {
 // @Summary Create Radreply
 // @Tags v1-radreply
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.V1RowIn true "Row {username, attribute, op, value}"
@@ -720,6 +739,7 @@ func v1CreateReply(c *fiber.Ctx) error {
 // @Summary Update Radreply
 // @Tags v1-radreply
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param reply_id path int true "Row id"
@@ -758,6 +778,7 @@ func v1UpdateReply(c *fiber.Ctx) error {
 // @Summary Delete Radreply
 // @Tags v1-radreply
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param reply_id path int true "Row id"
 // @Success 204
 // @Router /api/v1/reply/{reply_id} [delete]
@@ -776,6 +797,7 @@ func v1DeleteReply(c *fiber.Ctx) error {
 // @Summary Get Nas List
 // @Tags v1-nas
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param nasname query string false "Filter by NAS name"
 // @Param type query string false "Filter by NAS type"
@@ -809,6 +831,7 @@ func v1ListNas(c *fiber.Ctx) error {
 // @Summary Create Nas
 // @Tags v1-nas
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.V1NASCreate true "NAS"
@@ -858,6 +881,7 @@ func v1CreateNas(c *fiber.Ctx) error {
 // @Summary Get Nas
 // @Tags v1-nas
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param nas_id path int true "NAS id"
 // @Success 200 {object} schemas.V1NAS
@@ -875,6 +899,7 @@ func v1GetNas(c *fiber.Ctx) error {
 // @Summary Update Nas
 // @Tags v1-nas
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param nas_id path int true "NAS id"
@@ -931,6 +956,7 @@ func v1UpdateNas(c *fiber.Ctx) error {
 // @Summary Delete Nas
 // @Tags v1-nas
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param nas_id path int true "NAS id"
 // @Success 204
 // @Router /api/v1/nas/{nas_id} [delete]
@@ -949,6 +975,7 @@ func v1DeleteNas(c *fiber.Ctx) error {
 // @Summary Get Radacct List
 // @Tags v1-radacct
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param skip query int false "Skip"
 // @Param limit query int false "Limit (max 1000)"
@@ -990,6 +1017,7 @@ func v1ListRadacct(c *fiber.Ctx) error {
 // @Summary Get Radacct
 // @Tags v1-radacct
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param radacctid path int true "radacctid"
 // @Success 200 {object} schemas.V1Radacct
@@ -1007,6 +1035,7 @@ func v1GetRadacct(c *fiber.Ctx) error {
 // @Summary Get User Status (online/offline + active session info)
 // @Tags v1-radacct
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param username path string true "username"
 // @Success 200 {object} schemas.V1UserStatus
@@ -1031,6 +1060,7 @@ func v1UserStatus(c *fiber.Ctx) error {
 // @Summary Disconnect a user from NAS (RFC 5176 Disconnect-Request)
 // @Tags v1-disconnect
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.V1DisconnectRequest true "Disconnect payload"

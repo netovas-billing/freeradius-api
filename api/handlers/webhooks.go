@@ -34,6 +34,7 @@ func validEvent(e string) bool {
 // @Summary List webhook subscriptions (admin)
 // @Tags webhooks
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Success 200 {array} models.Webhook
 // @Router /api/webhooks [get]
@@ -50,6 +51,7 @@ func listWebhooks(c *fiber.Ctx) error {
 // @Description Outbound POST akan ditandatangani HMAC-SHA256 di header X-Signature.
 // @Tags webhooks
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.WebhookCreate true "Subscription payload"
@@ -115,6 +117,7 @@ func computeCursor(event string) uint64 {
 // @Summary Get webhook detail (admin)
 // @Tags webhooks
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param id path int true "Webhook ID"
 // @Success 200 {object} models.Webhook
@@ -132,6 +135,7 @@ func getWebhook(c *fiber.Ctx) error {
 // @Summary Update webhook (admin)
 // @Tags webhooks
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param id path int true "Webhook ID"
@@ -174,6 +178,7 @@ func updateWebhook(c *fiber.Ctx) error {
 // @Summary Delete webhook (admin)
 // @Tags webhooks
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param id path int true "Webhook ID"
 // @Success 204
 // @Router /api/webhooks/{id} [delete]
@@ -191,6 +196,7 @@ func deleteWebhook(c *fiber.Ctx) error {
 // @Summary List delivery history for a webhook (admin)
 // @Tags webhooks
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param id path int true "Webhook ID"
 // @Param limit query int false "Limit (max 1000)"

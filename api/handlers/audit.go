@@ -22,6 +22,7 @@ func RegisterAudit(r fiber.Router) {
 // @Description path substring, time window (RFC3339). Sets X-Total-Count.
 // @Tags audit
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param api_key_name query string false "Filter by key name"
 // @Param method query string false "GET|POST|PUT|DELETE"
@@ -87,6 +88,7 @@ func listAudit(c *fiber.Ctx) error {
 // @Summary Purge audit log older than `before` (admin)
 // @Tags audit
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param before query string true "RFC3339, hapus baris dengan timestamp < before"
 // @Success 200 {object} map[string]int64

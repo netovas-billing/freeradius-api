@@ -68,6 +68,8 @@ import (
 // @securityDefinitions.apikey ApiKeyAuth
 // @in header
 // @name X-API-Key
+//
+// @securityDefinitions.basic BasicAuth
 func main() {
 	config.Load()
 	database.Init()

@@ -45,6 +45,11 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-radiuspass_ganti}
       DB_NAME: ${DB_NAME:-radius}
       API_KEY: ${API_KEY:-change-me-to-a-long-random-string}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-}
+      BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:-}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      WEBHOOK_POLL_SECONDS: ${WEBHOOK_POLL_SECONDS:-5}
     ports:
       - "8000:8000"
 

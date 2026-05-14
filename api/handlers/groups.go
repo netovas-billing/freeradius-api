@@ -50,6 +50,7 @@ func buildGroupOut(groupname string) schemas.GroupOut {
 // @Summary List groups
 // @Tags groups
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Success 200 {array} string
 // @Router /api/groups [get]
@@ -78,6 +79,7 @@ func listGroups(c *fiber.Ctx) error {
 // @Summary Create group (insert group attributes)
 // @Tags groups
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body schemas.GroupCreate true "Group payload"
@@ -112,6 +114,7 @@ func createGroup(c *fiber.Ctx) error {
 // @Summary Get group detail
 // @Tags groups
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param groupname path string true "Group name"
 // @Success 200 {object} schemas.GroupOut
@@ -124,6 +127,7 @@ func getGroup(c *fiber.Ctx) error {
 // @Summary Delete group
 // @Tags groups
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param groupname path string true "Group name"
 // @Success 204
 // @Router /api/groups/{groupname} [delete]
@@ -139,6 +143,7 @@ func deleteGroup(c *fiber.Ctx) error {
 // @Summary Add user to group
 // @Tags groups
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param groupname path string true "Group name"
 // @Param username path string true "Username"
 // @Param priority query int false "Priority"
@@ -166,6 +171,7 @@ func addUserToGroup(c *fiber.Ctx) error {
 // @Summary Remove user from group
 // @Tags groups
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param groupname path string true "Group name"
 // @Param username path string true "Username"
 // @Success 204

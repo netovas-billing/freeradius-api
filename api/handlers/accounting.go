@@ -19,6 +19,7 @@ func RegisterAccounting(r fiber.Router) {
 // @Summary List currently active sessions (no Acct-Stop yet)
 // @Tags accounting
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param limit query int false "Limit (max 1000)"
 // @Success 200 {array} models.Radacct
@@ -41,6 +42,7 @@ func activeSessions(c *fiber.Ctx) error {
 // @Summary List session history
 // @Tags accounting
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param username query string false "Filter by username"
 // @Param nasipaddress query string false "Filter by NAS IP"
@@ -74,6 +76,7 @@ func listSessions(c *fiber.Ctx) error {
 // @Summary Aggregated traffic & session count for a user
 // @Tags accounting
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param username path string true "Username"
 // @Success 200 {object} schemas.UserUsage

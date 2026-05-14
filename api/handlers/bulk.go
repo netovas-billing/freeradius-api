@@ -21,6 +21,7 @@ func RegisterBulk(r fiber.Router) {
 // @Description Status code 200 (sebagian gagal/sukses) atau 201 (semua sukses).
 // @Tags users
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Accept json
 // @Produce json
 // @Param body body []schemas.UserCreate true "Array of UserCreate"

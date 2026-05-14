@@ -21,6 +21,7 @@ func RegisterStats(r fiber.Router) {
 // @Summary Dashboard overview (counts + traffic 24h + auth 24h)
 // @Tags stats
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Success 200 {object} schemas.StatsOverview
 // @Router /api/stats/overview [get]
@@ -81,6 +82,7 @@ func statsOverview(c *fiber.Ctx) error {
 // @Summary Top users by traffic (input+output)
 // @Tags stats
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param limit query int false "Top N (max 100)"
 // @Param since_hours query int false "Window in hours (default 24)"
@@ -114,6 +116,7 @@ func topUsers(c *fiber.Ctx) error {
 // @Summary Auth accept/reject counts in last N hours
 // @Tags stats
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param since_hours query int false "Window in hours (default 24)"
 // @Success 200 {object} schemas.AuthSummary

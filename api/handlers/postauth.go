@@ -22,6 +22,7 @@ func RegisterPostAuth(r fiber.Router) {
 // @Description and time window (from/to RFC3339). Sets X-Total-Count header.
 // @Tags postauth
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param username query string false "Filter by username"
 // @Param reply query string false "Access-Accept or Access-Reject"

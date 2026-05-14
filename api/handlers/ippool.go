@@ -23,6 +23,7 @@ func RegisterIPPool(r fiber.Router) {
 // @Summary List IP pools (distinct pool_name + counts)
 // @Tags ippool
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Success 200 {array} schemas.PoolSummary
 // @Router /api/ippool/pools [get]
@@ -52,6 +53,7 @@ func listPools(c *fiber.Ctx) error {
 // @Summary Pool detail + entries paginated
 // @Tags ippool
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param pool path string true "pool_name"
 // @Param allocated_only query bool false "Only currently allocated (expiry > now)"
@@ -86,6 +88,7 @@ func poolDetail(c *fiber.Ctx) error {
 // @Summary List active leases (filter by username/pool)
 // @Tags ippool
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Produce json
 // @Param username query string false "Filter by username"
 // @Param pool query string false "Filter by pool_name"
@@ -115,6 +118,7 @@ func listLeases(c *fiber.Ctx) error {
 // @Description hanya menandai lease selesai supaya bisa di-realloc.
 // @Tags ippool
 // @Security ApiKeyAuth
+// @Security BasicAuth
 // @Param id path int true "radippool.id"
 // @Success 204
 // @Failure 404 {object} schemas.ErrorResponse
