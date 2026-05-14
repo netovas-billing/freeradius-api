@@ -7,6 +7,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"freeradius-api/apierr"
 	"freeradius-api/database"
 	"freeradius-api/models"
 	"freeradius-api/schemas"
@@ -60,20 +61,20 @@ func listWebhooks(c *fiber.Ctx) error {
 func createWebhook(c *fiber.Ctx) error {
 	var payload schemas.WebhookCreate
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if payload.Name == "" || payload.URL == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "name and url required"})
+		return apierr.BadRequest(c, "Name and url are required")
 	}
 	if !validEvent(payload.Event) {
-		return c.Status(400).JSON(fiber.Map{"error": "event must be one of: session_stop, session_start, auth_accept, auth_reject"})
+		return apierr.BadRequest(c, "Event must be one of: session_stop, session_start, auth_accept, auth_reject")
 	}
 
 	secret := payload.Secret
 	if secret == "" {
 		buf := make([]byte, 32)
 		if _, err := rand.Read(buf); err != nil {
-			return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+			return apierr.Internal(c, err.Error())
 		}
 		secret = hex.EncodeToString(buf)
 	}
@@ -89,7 +90,7 @@ func createWebhook(c *fiber.Ctx) error {
 		Cursor:  cursor,
 	}
 	if err := database.DB.Create(&row).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(schemas.WebhookCreatedResponse{
 		ID:     row.ID,
@@ -126,7 +127,7 @@ func getWebhook(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	var row models.Webhook
 	if err := database.DB.First(&row, id).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "webhook not found"})
+		return apierr.NotFound(c, "Webhook not found")
 	}
 	return c.JSON(row)
 }
@@ -146,18 +147,18 @@ func updateWebhook(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	var row models.Webhook
 	if err := database.DB.First(&row, id).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "webhook not found"})
+		return apierr.NotFound(c, "Webhook not found")
 	}
 	var patch schemas.WebhookUpdate
 	if err := c.BodyParser(&patch); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if patch.URL != nil {
 		row.URL = *patch.URL
 	}
 	if patch.Event != nil {
 		if !validEvent(*patch.Event) {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid event"})
+			return apierr.BadRequest(c, "Invalid event")
 		}
 		row.Event = *patch.Event
 		row.Cursor = computeCursor(row.Event)
@@ -169,7 +170,7 @@ func updateWebhook(c *fiber.Ctx) error {
 		row.Enabled = *patch.Enabled
 	}
 	if err := database.DB.Save(&row).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(row)
 }
@@ -186,7 +187,7 @@ func deleteWebhook(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	res := database.DB.Delete(&models.Webhook{}, id)
 	if res.RowsAffected == 0 {
-		return c.Status(404).JSON(fiber.Map{"error": "webhook not found"})
+		return apierr.NotFound(c, "Webhook not found")
 	}
 	database.DB.Where("webhook_id = ?", id).Delete(&models.WebhookDelivery{})
 	return c.SendStatus(204)

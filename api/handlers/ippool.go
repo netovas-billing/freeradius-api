@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"freeradius-api/apierr"
 	"freeradius-api/database"
 	"freeradius-api/models"
 	"freeradius-api/schemas"
@@ -127,12 +128,12 @@ func releaseLease(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	var row models.Radippool
 	if err := database.DB.First(&row, id).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "lease not found"})
+		return apierr.NotFound(c, "Lease not found")
 	}
 	row.Username = ""
 	row.ExpiryTime = time.Now().Add(-time.Second)
 	if err := database.DB.Save(&row).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.SendStatus(204)
 }

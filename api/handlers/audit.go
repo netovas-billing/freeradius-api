@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"freeradius-api/apierr"
 	"freeradius-api/database"
 	"freeradius-api/models"
 )
@@ -96,11 +97,11 @@ func listAudit(c *fiber.Ctx) error {
 func purgeAudit(c *fiber.Ctx) error {
 	before := c.Query("before")
 	if before == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "before query param required (RFC3339)"})
+		return apierr.BadRequest(c, "Query param `before` is required (RFC3339)")
 	}
 	t, err := time.Parse(time.RFC3339, before)
 	if err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": "invalid RFC3339 timestamp"})
+		return apierr.BadRequest(c, "Invalid RFC3339 timestamp")
 	}
 	res := database.DB.Where("timestamp < ?", t).Delete(&models.ApiAuditLog{})
 	return c.JSON(fiber.Map{"deleted": res.RowsAffected})

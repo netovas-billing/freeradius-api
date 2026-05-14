@@ -13,6 +13,7 @@ import (
 	"layeh.com/radius/rfc2865"
 	"layeh.com/radius/rfc2866"
 
+	"freeradius-api/apierr"
 	"freeradius-api/database"
 	"freeradius-api/models"
 	"freeradius-api/schemas"
@@ -58,15 +59,15 @@ func disconnectSession(c *fiber.Ctx) error {
 	var sess models.Radacct
 	if err := database.DB.Where("acctuniqueid = ?", acctUniqueID).First(&sess).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return c.Status(404).JSON(fiber.Map{"error": "Session not found"})
+			return apierr.NotFound(c, "Session not found")
 		}
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	if sess.AcctStopTime != nil {
-		return c.Status(409).JSON(fiber.Map{"error": "Session already stopped"})
+		return apierr.Conflict(c, "Session already stopped")
 	}
 	if sess.NASIPAddress == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "Session has empty nasipaddress"})
+		return apierr.BadRequest(c, "Session has empty nasipaddress")
 	}
 
 	var nas models.NAS
@@ -78,7 +79,7 @@ func disconnectSession(c *fiber.Ctx) error {
 
 	nasIP := net.ParseIP(sess.NASIPAddress)
 	if nasIP == nil {
-		return c.Status(400).JSON(fiber.Map{"error": "Invalid NAS IP address"})
+		return apierr.BadRequest(c, "Invalid NAS IP address")
 	}
 
 	packet := radius.New(radius.CodeDisconnectRequest, []byte(nas.Secret))

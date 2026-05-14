@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 
+	"freeradius-api/apierr"
 	"freeradius-api/database"
 	"freeradius-api/models"
 	"freeradius-api/schemas"
@@ -31,13 +32,13 @@ func RegisterBulk(r fiber.Router) {
 func bulkCreateUsers(c *fiber.Ctx) error {
 	var payload []schemas.UserCreate
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if len(payload) == 0 {
-		return c.Status(400).JSON(fiber.Map{"error": "empty array"})
+		return apierr.BadRequest(c, "Empty array")
 	}
 	if len(payload) > 500 {
-		return c.Status(400).JSON(fiber.Map{"error": "max 500 users per call"})
+		return apierr.BadRequest(c, "Max 500 users per call")
 	}
 
 	out := schemas.BulkUserResponse{

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"freeradius-api/apierr"
 	"freeradius-api/config"
 	"freeradius-api/database"
 	"freeradius-api/models"
@@ -28,14 +29,12 @@ func HashKey(raw string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// APIKey — dual-auth middleware. Urutan strategi:
+// APIKey — dual-auth middleware. Strategi:
 //  1. Header X-API-Key match env API_KEY → admin (bootstrap).
 //  2. Header X-API-Key match SHA-256 di tabel api_keys → scope row.
-//  3. Header Authorization: Basic <base64(user:pass)> match env
-//     BASIC_AUTH_USER + BASIC_AUTH_PASSWORD → admin (basic-auth bootstrap).
-//  4. Lainnya → 401, WWW-Authenticate: Basic supaya browser munculkan dialog.
+//  3. Header Authorization: Basic match env BASIC_AUTH_USER/PASSWORD → admin.
+//  4. Lainnya → 401 + WWW-Authenticate: Basic.
 func APIKey(c *fiber.Ctx) error {
-	// Strategy 1+2: X-API-Key
 	if key := c.Get("X-API-Key"); key != "" {
 		if subtle.ConstantTimeCompare([]byte(key), []byte(config.APIKey)) == 1 {
 			c.Locals("api_key_name", BootstrapKeyName)
@@ -53,10 +52,9 @@ func APIKey(c *fiber.Ctx) error {
 			c.Locals("scope", row.Scope)
 			return c.Next()
 		}
-		return unauthorized(c, "invalid API key")
+		return unauthorized(c, "Invalid API key")
 	}
 
-	// Strategy 3: HTTP Basic Auth
 	if config.BasicAuthUser != "" && config.BasicAuthPassword != "" {
 		if hdr := c.Get("Authorization"); strings.HasPrefix(hdr, "Basic ") {
 			user, pass, ok := decodeBasic(strings.TrimPrefix(hdr, "Basic "))
@@ -67,11 +65,11 @@ func APIKey(c *fiber.Ctx) error {
 				c.Locals("scope", ScopeAdmin)
 				return c.Next()
 			}
-			return unauthorized(c, "invalid Basic credentials")
+			return unauthorized(c, "Invalid Basic credentials")
 		}
 	}
 
-	return unauthorized(c, "missing X-API-Key or Authorization header")
+	return unauthorized(c, "Missing X-API-Key or Authorization header")
 }
 
 func decodeBasic(b64 string) (user, pass string, ok bool) {
@@ -90,7 +88,7 @@ func unauthorized(c *fiber.Ctx, msg string) error {
 	if config.BasicAuthUser != "" {
 		c.Set("WWW-Authenticate", `Basic realm="freeradius-api"`)
 	}
-	return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": msg})
+	return apierr.Unauthorized(c, msg)
 }
 
 func ScopeByMethod(c *fiber.Ctx) error {
@@ -108,15 +106,12 @@ func ScopeByMethod(c *fiber.Ctx) error {
 			return c.Next()
 		}
 	}
-	return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-		"error": "insufficient scope",
-		"scope": scope,
-	})
+	return apierr.Forbidden(c, "Insufficient scope: current=\""+scope+"\"", "insufficient_scope")
 }
 
 func RequireAdmin(c *fiber.Ctx) error {
 	if s, _ := c.Locals("scope").(string); s == ScopeAdmin {
 		return c.Next()
 	}
-	return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": "admin scope required"})
+	return apierr.Forbidden(c, "Admin scope required", "admin_required")
 }

@@ -16,10 +16,12 @@ import (
 	"layeh.com/radius/rfc2865"
 	"layeh.com/radius/rfc2866"
 
+	"freeradius-api/apierr"
 	"freeradius-api/database"
 	"freeradius-api/models"
 	"freeradius-api/schemas"
 )
+
 
 func RegisterV1(r fiber.Router) {
 	v := r.Group("/v1")
@@ -80,63 +82,6 @@ func paging(c *fiber.Ctx) (int, int) {
 		limit = 1000
 	}
 	return skip, limit
-}
-
-// ===== FastAPI-style error helpers (legacy /api/v1/* compat) =====
-//
-// Response body memakai key "detail" (bukan "error"):
-//
-//	{ "detail": "string" }                                                            // 400/404/409
-//	{ "detail": [ {"loc": [...], "msg": "...", "type": "...", "input": ..., "ctx": {}} ] }  // 422
-func v1detail(c *fiber.Ctx, status int, msg string) error {
-	return c.Status(status).JSON(fiber.Map{"detail": msg})
-}
-
-// errV1Written — sentinel non-nil error supaya caller bisa short-circuit
-// setelah helper sudah menulis response. Tanpa ini, c.Status().JSON()
-// mengembalikan nil dan handler lanjut mengeksekusi logic berikutnya
-// yang akan menimpa response.
-var errV1Written = errors.New("v1 response already written")
-
-// v1ValidationDetail — match FastAPI/Pydantic urutan key: loc, msg, type, input, ctx.
-type v1ValidationDetail struct {
-	Loc   []interface{} `json:"loc"`
-	Msg   string        `json:"msg"`
-	Type  string        `json:"type"`
-	Input interface{}   `json:"input"`
-	Ctx   interface{}   `json:"ctx"`
-}
-
-// v1missingChecks — pair (fieldname, value) variadic. Kalau ada yang kosong:
-// tulis 422 dengan satu entry per field kosong + return errV1Written.
-// Kalau semua OK return nil.
-func v1missingChecks(c *fiber.Ctx, pairs ...string) error {
-	if len(pairs)%2 != 0 {
-		return nil
-	}
-	var details []v1ValidationDetail
-	for i := 0; i < len(pairs); i += 2 {
-		if pairs[i+1] == "" {
-			details = append(details, v1ValidationDetail{
-				Loc:   []interface{}{"body", pairs[i]},
-				Msg:   "field required",
-				Type:  "value_error.missing",
-				Input: nil,
-				Ctx:   struct{}{},
-			})
-		}
-	}
-	if len(details) == 0 {
-		return nil
-	}
-	_ = c.Status(fiber.StatusUnprocessableEntity).JSON(fiber.Map{"detail": details})
-	return errV1Written
-}
-
-func v1parseErr(c *fiber.Ctx, err error) error {
-	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-		"detail": "There was an error parsing the body: " + err.Error(),
-	})
 }
 
 func rcOut(r models.Radcheck) schemas.V1Radcheck {
@@ -284,9 +229,9 @@ func v1ListUsers(c *fiber.Ctx) error {
 func v1CreateUser(c *fiber.Ctx) error {
 	var p schemas.V1RowIn
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
-	if err := v1missingChecks(c, "username", p.Username, "attribute", p.Attribute); err != nil {
+	if err := apierr.MissingFields(c, "username", p.Username, "attribute", p.Attribute); err != nil {
 		return nil
 	}
 	if p.Op == "" {
@@ -294,7 +239,7 @@ func v1CreateUser(c *fiber.Ctx) error {
 	}
 	row := models.Radcheck{Username: p.Username, Attribute: p.Attribute, Op: p.Op, Value: p.Value}
 	if err := database.DB.Create(&row).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(rcOut(row))
 }
@@ -313,7 +258,7 @@ func v1GetUser(c *fiber.Ctx) error {
 	var rows []models.Radcheck
 	database.DB.Where("username = ?", username).Order("id").Find(&rows)
 	if len(rows) == 0 {
-		return v1detail(c, 404, "user not found")
+		return apierr.NotFound(c, "User not found")
 	}
 	out := make([]schemas.V1Radcheck, 0, len(rows))
 	for _, r := range rows {
@@ -337,11 +282,11 @@ func v1UpdateUser(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("user_id")
 	var row models.Radcheck
 	if err := database.DB.First(&row, id).Error; err != nil {
-		return v1detail(c, 404, "row not found")
+		return apierr.NotFound(c, "Row not found")
 	}
 	var p schemas.V1RowIn
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if p.Username != "" {
 		row.Username = p.Username
@@ -356,7 +301,7 @@ func v1UpdateUser(c *fiber.Ctx) error {
 		row.Value = p.Value
 	}
 	if err := database.DB.Save(&row).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(rcOut(row))
 }
@@ -373,7 +318,7 @@ func v1DeleteUser(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("user_id")
 	res := database.DB.Delete(&models.Radcheck{}, id)
 	if res.RowsAffected == 0 {
-		return v1detail(c, 404, "row not found")
+		return apierr.NotFound(c, "Row not found")
 	}
 	return c.SendStatus(204)
 }
@@ -427,9 +372,9 @@ func v1ListUserGroup(c *fiber.Ctx) error {
 func v1CreateUserGroup(c *fiber.Ctx) error {
 	var p schemas.V1RowIn
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
-	if err := v1missingChecks(c, "username", p.Username, "groupname", p.Groupname); err != nil {
+	if err := apierr.MissingFields(c, "username", p.Username, "groupname", p.Groupname); err != nil {
 		return nil
 	}
 	pri := 1
@@ -438,7 +383,7 @@ func v1CreateUserGroup(c *fiber.Ctx) error {
 	}
 	row := models.Radusergroup{Username: p.Username, Groupname: p.Groupname, Priority: pri}
 	if err := database.DB.Create(&row).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(rugOut(row))
 }
@@ -458,11 +403,11 @@ func v1UpdateUserGroup(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("group_id")
 	var row models.Radusergroup
 	if err := database.DB.First(&row, id).Error; err != nil {
-		return v1detail(c, 404, "row not found")
+		return apierr.NotFound(c, "Row not found")
 	}
 	var p schemas.V1RowIn
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if p.Username != "" {
 		row.Username = p.Username
@@ -474,7 +419,7 @@ func v1UpdateUserGroup(c *fiber.Ctx) error {
 		row.Priority = *p.Priority
 	}
 	if err := database.DB.Save(&row).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(rugOut(row))
 }
@@ -491,7 +436,7 @@ func v1DeleteUserGroup(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("group_id")
 	res := database.DB.Delete(&models.Radusergroup{}, id)
 	if res.RowsAffected == 0 {
-		return v1detail(c, 404, "row not found")
+		return apierr.NotFound(c, "Row not found")
 	}
 	return c.SendStatus(204)
 }
@@ -541,9 +486,9 @@ func v1ListGroupReply(c *fiber.Ctx) error {
 func v1CreateGroupReply(c *fiber.Ctx) error {
 	var p schemas.V1RowIn
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
-	if err := v1missingChecks(c, "groupname", p.Groupname, "attribute", p.Attribute); err != nil {
+	if err := apierr.MissingFields(c, "groupname", p.Groupname, "attribute", p.Attribute); err != nil {
 		return nil
 	}
 	if p.Op == "" {
@@ -551,7 +496,7 @@ func v1CreateGroupReply(c *fiber.Ctx) error {
 	}
 	row := models.Radgroupreply{Groupname: p.Groupname, Attribute: p.Attribute, Op: p.Op, Value: p.Value}
 	if err := database.DB.Create(&row).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(rgrOut(row))
 }
@@ -571,11 +516,11 @@ func v1UpdateGroupReply(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("group_id")
 	var row models.Radgroupreply
 	if err := database.DB.First(&row, id).Error; err != nil {
-		return v1detail(c, 404, "row not found")
+		return apierr.NotFound(c, "Row not found")
 	}
 	var p schemas.V1RowIn
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if p.Groupname != "" {
 		row.Groupname = p.Groupname
@@ -590,7 +535,7 @@ func v1UpdateGroupReply(c *fiber.Ctx) error {
 		row.Value = p.Value
 	}
 	if err := database.DB.Save(&row).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(rgrOut(row))
 }
@@ -607,7 +552,7 @@ func v1DeleteGroupReply(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("group_id")
 	res := database.DB.Delete(&models.Radgroupreply{}, id)
 	if res.RowsAffected == 0 {
-		return v1detail(c, 404, "row not found")
+		return apierr.NotFound(c, "Row not found")
 	}
 	return c.SendStatus(204)
 }
@@ -657,9 +602,9 @@ func v1ListGroupCheck(c *fiber.Ctx) error {
 func v1CreateGroupCheck(c *fiber.Ctx) error {
 	var p schemas.V1RowIn
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
-	if err := v1missingChecks(c, "groupname", p.Groupname, "attribute", p.Attribute); err != nil {
+	if err := apierr.MissingFields(c, "groupname", p.Groupname, "attribute", p.Attribute); err != nil {
 		return nil
 	}
 	if p.Op == "" {
@@ -667,7 +612,7 @@ func v1CreateGroupCheck(c *fiber.Ctx) error {
 	}
 	row := models.Radgroupcheck{Groupname: p.Groupname, Attribute: p.Attribute, Op: p.Op, Value: p.Value}
 	if err := database.DB.Create(&row).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(rgcOut(row))
 }
@@ -687,11 +632,11 @@ func v1UpdateGroupCheck(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("group_id")
 	var row models.Radgroupcheck
 	if err := database.DB.First(&row, id).Error; err != nil {
-		return v1detail(c, 404, "row not found")
+		return apierr.NotFound(c, "Row not found")
 	}
 	var p schemas.V1RowIn
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if p.Groupname != "" {
 		row.Groupname = p.Groupname
@@ -706,7 +651,7 @@ func v1UpdateGroupCheck(c *fiber.Ctx) error {
 		row.Value = p.Value
 	}
 	if err := database.DB.Save(&row).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(rgcOut(row))
 }
@@ -723,7 +668,7 @@ func v1DeleteGroupCheck(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("group_id")
 	res := database.DB.Delete(&models.Radgroupcheck{}, id)
 	if res.RowsAffected == 0 {
-		return v1detail(c, 404, "row not found")
+		return apierr.NotFound(c, "Row not found")
 	}
 	return c.SendStatus(204)
 }
@@ -777,9 +722,9 @@ func v1ListReply(c *fiber.Ctx) error {
 func v1CreateReply(c *fiber.Ctx) error {
 	var p schemas.V1RowIn
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
-	if err := v1missingChecks(c, "username", p.Username, "attribute", p.Attribute); err != nil {
+	if err := apierr.MissingFields(c, "username", p.Username, "attribute", p.Attribute); err != nil {
 		return nil
 	}
 	if p.Op == "" {
@@ -787,7 +732,7 @@ func v1CreateReply(c *fiber.Ctx) error {
 	}
 	row := models.Radreply{Username: p.Username, Attribute: p.Attribute, Op: p.Op, Value: p.Value}
 	if err := database.DB.Create(&row).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(rrOut(row))
 }
@@ -807,11 +752,11 @@ func v1UpdateReply(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("reply_id")
 	var row models.Radreply
 	if err := database.DB.First(&row, id).Error; err != nil {
-		return v1detail(c, 404, "row not found")
+		return apierr.NotFound(c, "Row not found")
 	}
 	var p schemas.V1RowIn
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if p.Username != "" {
 		row.Username = p.Username
@@ -826,7 +771,7 @@ func v1UpdateReply(c *fiber.Ctx) error {
 		row.Value = p.Value
 	}
 	if err := database.DB.Save(&row).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(rrOut(row))
 }
@@ -843,7 +788,7 @@ func v1DeleteReply(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("reply_id")
 	res := database.DB.Delete(&models.Radreply{}, id)
 	if res.RowsAffected == 0 {
-		return v1detail(c, 404, "row not found")
+		return apierr.NotFound(c, "Row not found")
 	}
 	return c.SendStatus(204)
 }
@@ -897,9 +842,9 @@ func v1ListNas(c *fiber.Ctx) error {
 func v1CreateNas(c *fiber.Ctx) error {
 	var p schemas.V1NASCreate
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
-	if err := v1missingChecks(c, "nasname", p.NASName, "secret", p.Secret); err != nil {
+	if err := apierr.MissingFields(c, "nasname", p.NASName, "secret", p.Secret); err != nil {
 		return nil
 	}
 	n := models.NAS{NASName: p.NASName, Secret: p.Secret}
@@ -929,7 +874,7 @@ func v1CreateNas(c *fiber.Ctx) error {
 		n.Description = &s
 	}
 	if err := database.DB.Create(&n).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(nasOut(n))
 }
@@ -947,7 +892,7 @@ func v1GetNas(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("nas_id")
 	var n models.NAS
 	if err := database.DB.First(&n, id).Error; err != nil {
-		return v1detail(c, 404, "NAS not found")
+		return apierr.NotFound(c, "NAS not found")
 	}
 	return c.JSON(nasOut(n))
 }
@@ -967,11 +912,11 @@ func v1UpdateNas(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("nas_id")
 	var n models.NAS
 	if err := database.DB.First(&n, id).Error; err != nil {
-		return v1detail(c, 404, "NAS not found")
+		return apierr.NotFound(c, "NAS not found")
 	}
 	var p schemas.V1NASCreate
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if p.NASName != "" {
 		n.NASName = p.NASName
@@ -1004,7 +949,7 @@ func v1UpdateNas(c *fiber.Ctx) error {
 		n.Description = &s
 	}
 	if err := database.DB.Save(&n).Error; err != nil {
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(nasOut(n))
 }
@@ -1021,7 +966,7 @@ func v1DeleteNas(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("nas_id")
 	res := database.DB.Delete(&models.NAS{}, id)
 	if res.RowsAffected == 0 {
-		return v1detail(c, 404, "NAS not found")
+		return apierr.NotFound(c, "NAS not found")
 	}
 	return c.SendStatus(204)
 }
@@ -1083,7 +1028,7 @@ func v1GetRadacct(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("radacctid")
 	var r models.Radacct
 	if err := database.DB.Where("radacctid = ?", id).First(&r).Error; err != nil {
-		return v1detail(c, 404, "session not found")
+		return apierr.NotFound(c, "Session not found")
 	}
 	return c.JSON(acctOut(r))
 }
@@ -1128,9 +1073,9 @@ func v1UserStatus(c *fiber.Ctx) error {
 func v1Disconnect(c *fiber.Ctx) error {
 	var p schemas.V1DisconnectRequest
 	if err := c.BodyParser(&p); err != nil {
-		return v1parseErr(c, err)
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
-	if err := v1missingChecks(c, "username", p.Username); err != nil {
+	if err := apierr.MissingFields(c, "username", p.Username); err != nil {
 		return nil
 	}
 
@@ -1141,14 +1086,14 @@ func v1Disconnect(c *fiber.Ctx) error {
 	var sess models.Radacct
 	if err := q.Order("acctstarttime DESC").First(&sess).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return v1detail(c, 404, "no active session for user")
+			return apierr.NotFound(c, "No active session for user")
 		}
-		return v1detail(c, 500, err.Error())
+		return apierr.Internal(c, err.Error())
 	}
 
 	var nas models.NAS
 	if err := database.DB.Where("nasname = ?", sess.NASIPAddress).First(&nas).Error; err != nil {
-		return v1detail(c, 404, "NAS secret not registered in `nas` table; add it first")
+		return apierr.NotFound(c, "NAS secret not registered in `nas` table — add it first")
 	}
 
 	port := p.Port
@@ -1161,7 +1106,7 @@ func v1Disconnect(c *fiber.Ctx) error {
 	}
 	nasIP := net.ParseIP(sess.NASIPAddress)
 	if nasIP == nil {
-		return v1detail(c, 400, "invalid NAS IP")
+		return apierr.BadRequest(c, "Invalid NAS IP address")
 	}
 
 	pkt := radius.New(radius.CodeDisconnectRequest, []byte(nas.Secret))
@@ -1179,7 +1124,7 @@ func v1Disconnect(c *fiber.Ctx) error {
 	addr := net.JoinHostPort(sess.NASIPAddress, strconv.Itoa(port))
 	resp, err := (&radius.Client{}).Exchange(ctx, pkt, addr)
 	if err != nil {
-		return v1detail(c, 504, "disconnect failed: "+err.Error())
+		return apierr.GatewayTimeout(c, "disconnect failed: "+err.Error())
 	}
 
 	status := "unknown"

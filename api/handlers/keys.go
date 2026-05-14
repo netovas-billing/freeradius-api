@@ -6,6 +6,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"freeradius-api/apierr"
 	"freeradius-api/database"
 	"freeradius-api/middleware"
 	"freeradius-api/models"
@@ -52,18 +53,18 @@ func listKeys(c *fiber.Ctx) error {
 func createKey(c *fiber.Ctx) error {
 	var payload schemas.ApiKeyCreate
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if payload.Name == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "name required"})
+		return apierr.BadRequest(c, "Name is required")
 	}
 	if !validScope(payload.Scope) {
-		return c.Status(400).JSON(fiber.Map{"error": "scope must be one of: read, write, admin"})
+		return apierr.BadRequest(c, "Scope must be one of: read, write, admin")
 	}
 
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	rawHex := hex.EncodeToString(raw)
 	hash := middleware.HashKey(rawHex)
@@ -76,7 +77,7 @@ func createKey(c *fiber.Ctx) error {
 		Notes:   payload.Notes,
 	}
 	if err := database.DB.Create(&row).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 
 	return c.Status(201).JSON(schemas.ApiKeyCreatedResponse{
@@ -102,15 +103,15 @@ func updateKey(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	var row models.ApiKey
 	if err := database.DB.First(&row, id).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "Key not found"})
+		return apierr.NotFound(c, "API key not found")
 	}
 	var patch schemas.ApiKeyUpdate
 	if err := c.BodyParser(&patch); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if patch.Scope != nil {
 		if !validScope(*patch.Scope) {
-			return c.Status(400).JSON(fiber.Map{"error": "invalid scope"})
+			return apierr.BadRequest(c, "Invalid scope")
 		}
 		row.Scope = *patch.Scope
 	}
@@ -121,7 +122,7 @@ func updateKey(c *fiber.Ctx) error {
 		row.Notes = patch.Notes
 	}
 	if err := database.DB.Save(&row).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(row)
 }
@@ -138,7 +139,7 @@ func deleteKey(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	res := database.DB.Delete(&models.ApiKey{}, id)
 	if res.RowsAffected == 0 {
-		return c.Status(404).JSON(fiber.Map{"error": "Key not found"})
+		return apierr.NotFound(c, "API key not found")
 	}
 	return c.SendStatus(204)
 }

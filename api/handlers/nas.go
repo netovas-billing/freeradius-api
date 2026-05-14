@@ -3,6 +3,7 @@ package handlers
 import (
 	"github.com/gofiber/fiber/v2"
 
+	"freeradius-api/apierr"
 	"freeradius-api/database"
 	"freeradius-api/models"
 	"freeradius-api/schemas"
@@ -44,10 +45,10 @@ func listNAS(c *fiber.Ctx) error {
 func createNAS(c *fiber.Ctx) error {
 	var payload schemas.NASCreate
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if payload.NASName == "" || payload.Secret == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "nasname and secret required"})
+		return apierr.BadRequest(c, "Nasname and secret are required")
 	}
 	n := models.NAS{
 		NASName: payload.NASName,
@@ -76,7 +77,7 @@ func createNAS(c *fiber.Ctx) error {
 		n.Description = &s
 	}
 	if err := database.DB.Create(&n).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(n)
 }
@@ -95,7 +96,7 @@ func getNAS(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	var n models.NAS
 	if err := database.DB.First(&n, id).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "NAS not found"})
+		return apierr.NotFound(c, "NAS not found")
 	}
 	return c.JSON(n)
 }
@@ -116,11 +117,11 @@ func updateNAS(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	var n models.NAS
 	if err := database.DB.First(&n, id).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "NAS not found"})
+		return apierr.NotFound(c, "NAS not found")
 	}
 	var patch schemas.NASUpdate
 	if err := c.BodyParser(&patch); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if patch.NASName != nil {
 		n.NASName = *patch.NASName
@@ -147,7 +148,7 @@ func updateNAS(c *fiber.Ctx) error {
 		n.Description = patch.Description
 	}
 	if err := database.DB.Save(&n).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(n)
 }
@@ -165,7 +166,7 @@ func deleteNAS(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	res := database.DB.Delete(&models.NAS{}, id)
 	if res.RowsAffected == 0 {
-		return c.Status(404).JSON(fiber.Map{"error": "NAS not found"})
+		return apierr.NotFound(c, "NAS not found")
 	}
 	return c.SendStatus(204)
 }

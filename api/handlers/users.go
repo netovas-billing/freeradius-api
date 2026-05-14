@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 
+	"freeradius-api/apierr"
 	"freeradius-api/database"
 	"freeradius-api/models"
 	"freeradius-api/schemas"
@@ -135,10 +136,10 @@ func listUsers(c *fiber.Ctx) error {
 func createUser(c *fiber.Ctx) error {
 	var payload schemas.UserCreate
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if payload.Username == "" || payload.Password == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "username and password are required"})
+		return apierr.BadRequest(c, "Username and password are required")
 	}
 	if payload.PasswordAttr == "" {
 		payload.PasswordAttr = "Cleartext-Password"
@@ -146,9 +147,9 @@ func createUser(c *fiber.Ctx) error {
 
 	var existing models.Radcheck
 	if err := database.DB.Where("username = ?", payload.Username).First(&existing).Error; err == nil {
-		return c.Status(409).JSON(fiber.Map{"error": "User already exists"})
+		return apierr.Conflict(c, "User already exists")
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 
 	err := database.DB.Transaction(func(tx *gorm.DB) error {
@@ -189,7 +190,7 @@ func createUser(c *fiber.Ctx) error {
 		return nil
 	})
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 
 	out, _ := buildUserOut(payload.Username)
@@ -210,10 +211,10 @@ func getUser(c *fiber.Ctx) error {
 	username := c.Params("username")
 	out, err := buildUserOut(username)
 	if err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	if out == nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User not found"})
+		return apierr.NotFound(c, "User not found")
 	}
 	return c.JSON(out)
 }
@@ -234,7 +235,7 @@ func updatePassword(c *fiber.Ctx) error {
 	username := c.Params("username")
 	var payload schemas.UserPasswordUpdate
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if payload.PasswordAttr == "" {
 		payload.PasswordAttr = "Cleartext-Password"
@@ -243,12 +244,12 @@ func updatePassword(c *fiber.Ctx) error {
 	var row models.Radcheck
 	err := database.DB.Where("username = ? AND attribute IN ?", username, passwordAttrs).First(&row).Error
 	if err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "User or password attribute not found"})
+		return apierr.NotFound(c, "User or password attribute not found")
 	}
 	row.Attribute = payload.PasswordAttr
 	row.Value = payload.Password
 	if err := database.DB.Save(&row).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 
 	out, _ := buildUserOut(username)
@@ -270,7 +271,7 @@ func deleteUser(c *fiber.Ctx) error {
 	database.DB.Where("username = ?", username).Delete(&models.Radreply{})
 	database.DB.Where("username = ?", username).Delete(&models.Radusergroup{})
 	if res.RowsAffected == 0 {
-		return c.Status(404).JSON(fiber.Map{"error": "User not found"})
+		return apierr.NotFound(c, "User not found")
 	}
 	return c.SendStatus(204)
 }
@@ -290,14 +291,14 @@ func addCheckAttr(c *fiber.Ctx) error {
 	username := c.Params("username")
 	var attr schemas.AttributeIn
 	if err := c.BodyParser(&attr); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if attr.Op == "" {
 		attr.Op = ":="
 	}
 	row := models.Radcheck{Username: username, Attribute: attr.Attribute, Op: attr.Op, Value: attr.Value}
 	if err := database.DB.Create(&row).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(schemas.AttributeOut{ID: row.ID, Attribute: row.Attribute, Op: row.Op, Value: row.Value})
 }
@@ -317,14 +318,14 @@ func addReplyAttr(c *fiber.Ctx) error {
 	username := c.Params("username")
 	var attr schemas.AttributeIn
 	if err := c.BodyParser(&attr); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if attr.Op == "" {
 		attr.Op = ":="
 	}
 	row := models.Radreply{Username: username, Attribute: attr.Attribute, Op: attr.Op, Value: attr.Value}
 	if err := database.DB.Create(&row).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(schemas.AttributeOut{ID: row.ID, Attribute: row.Attribute, Op: row.Op, Value: row.Value})
 }
@@ -347,11 +348,11 @@ func updateCheckAttr(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	var patch schemas.AttributeUpdate
 	if err := c.BodyParser(&patch); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	var row models.Radcheck
 	if err := database.DB.Where("username = ? AND id = ?", username, id).First(&row).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "Attribute not found"})
+		return apierr.NotFound(c, "Attribute not found")
 	}
 	if patch.Attribute != nil {
 		row.Attribute = *patch.Attribute
@@ -363,7 +364,7 @@ func updateCheckAttr(c *fiber.Ctx) error {
 		row.Value = *patch.Value
 	}
 	if err := database.DB.Save(&row).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(schemas.AttributeOut{ID: row.ID, Attribute: row.Attribute, Op: row.Op, Value: row.Value})
 }
@@ -386,11 +387,11 @@ func updateReplyAttr(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	var patch schemas.AttributeUpdate
 	if err := c.BodyParser(&patch); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	var row models.Radreply
 	if err := database.DB.Where("username = ? AND id = ?", username, id).First(&row).Error; err != nil {
-		return c.Status(404).JSON(fiber.Map{"error": "Attribute not found"})
+		return apierr.NotFound(c, "Attribute not found")
 	}
 	if patch.Attribute != nil {
 		row.Attribute = *patch.Attribute
@@ -402,7 +403,7 @@ func updateReplyAttr(c *fiber.Ctx) error {
 		row.Value = *patch.Value
 	}
 	if err := database.DB.Save(&row).Error; err != nil {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.JSON(schemas.AttributeOut{ID: row.ID, Attribute: row.Attribute, Op: row.Op, Value: row.Value})
 }
@@ -422,7 +423,7 @@ func deleteCheckAttr(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	res := database.DB.Where("username = ? AND id = ?", username, id).Delete(&models.Radcheck{})
 	if res.RowsAffected == 0 {
-		return c.Status(404).JSON(fiber.Map{"error": "Attribute not found"})
+		return apierr.NotFound(c, "Attribute not found")
 	}
 	return c.SendStatus(204)
 }
@@ -442,7 +443,7 @@ func deleteReplyAttr(c *fiber.Ctx) error {
 	id, _ := c.ParamsInt("id")
 	res := database.DB.Where("username = ? AND id = ?", username, id).Delete(&models.Radreply{})
 	if res.RowsAffected == 0 {
-		return c.Status(404).JSON(fiber.Map{"error": "Attribute not found"})
+		return apierr.NotFound(c, "Attribute not found")
 	}
 	return c.SendStatus(204)
 }

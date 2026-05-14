@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 
+	"freeradius-api/apierr"
 	"freeradius-api/database"
 	"freeradius-api/models"
 	"freeradius-api/schemas"
@@ -88,10 +89,10 @@ func listGroups(c *fiber.Ctx) error {
 func createGroup(c *fiber.Ctx) error {
 	var payload schemas.GroupCreate
 	if err := c.BodyParser(&payload); err != nil {
-		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+		return apierr.BadRequest(c, "Invalid request body: "+err.Error())
 	}
 	if payload.Groupname == "" {
-		return c.Status(400).JSON(fiber.Map{"error": "groupname required"})
+		return apierr.BadRequest(c, "Groupname is required")
 	}
 	for _, a := range payload.CheckAttributes {
 		op := a.Op
@@ -162,7 +163,7 @@ func addUserToGroup(c *fiber.Ctx) error {
 	} else if errors.Is(err, gorm.ErrRecordNotFound) {
 		database.DB.Create(&models.Radusergroup{Username: username, Groupname: groupname, Priority: priority})
 	} else {
-		return c.Status(500).JSON(fiber.Map{"error": err.Error()})
+		return apierr.Internal(c, err.Error())
 	}
 	return c.Status(201).JSON(fiber.Map{"username": username, "groupname": groupname, "priority": priority})
 }
@@ -182,7 +183,7 @@ func removeUserFromGroup(c *fiber.Ctx) error {
 	username := c.Params("username")
 	res := database.DB.Where("username = ? AND groupname = ?", username, groupname).Delete(&models.Radusergroup{})
 	if res.RowsAffected == 0 {
-		return c.Status(404).JSON(fiber.Map{"error": "Membership not found"})
+		return apierr.NotFound(c, "Membership not found")
 	}
 	return c.SendStatus(204)
 }
