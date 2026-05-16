@@ -1,0 +1,22 @@
+
+# ============================================================
+# Dynamic clients (NAS mitra) — zero-touch provisioning
+# ============================================================
+#
+# Definisi network di mana NAS dapat di-register dinamis lewat
+# tabel `nas` (lookup oleh virtual server `dynamic_clients`).
+#
+# WAJIB di-narrow ke subnet yang sebenarnya (mis. tunnel VPN
+# mitra) untuk production. Subnet 0.0.0.0/0 di bawah membolehkan
+# SEMUA IPv4 menjadi dynamic client — aman dari sisi auth karena
+# secret tetap harus match DB, tapi mengundang DoS port 1812
+# kalau API terekspos publik.
+#
+# Rate limit: FreeRADIUS membatasi 1 dynamic client baru per detik.
+# Lifetime: 0 = cached selamanya sampai FreeRADIUS restart.
+#
+client dynamic {
+	ipaddr = 0.0.0.0/0
+	dynamic_clients = dynamic_clients
+	lifetime = 0
+}

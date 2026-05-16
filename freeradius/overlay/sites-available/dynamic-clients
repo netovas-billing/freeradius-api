@@ -1,0 +1,40 @@
+# -*- text -*-
+######################################################################
+#
+#   Dynamic clients: lookup NAS secret dari tabel `nas` saat paket
+#   pertama tiba dari IP yang belum terdaftar.
+#
+#   Cara kerja:
+#     1. Paket masuk dari IP X yang tidak ada di static clients.
+#     2. Karena X masuk dalam `client dynamic { ipaddr = ... }` di
+#        clients.conf, FreeRADIUS trigger virtual server ini.
+#     3. SQL lookup ke tabel nas WHERE nasname = X.
+#     4. Kalau ketemu: NAS di-cache dengan secret dari DB, request
+#        diproses normal. Kalau tidak: request dropped.
+#     5. NAS yang baru ditambah via API langsung dipakai tanpa restart.
+#
+#   Rate limit: FreeRADIUS hard-coded max 1 client baru per detik
+#   (mitigasi DoS). Tidak bisa diubah.
+#
+######################################################################
+
+server dynamic_clients {
+	authorize {
+		#  Cek apakah NAS terdaftar di tabel `nas`.
+		if ("%{sql: SELECT nasname FROM nas WHERE nasname = '%{Packet-Src-IP-Address}'}") {
+			update control {
+				&FreeRADIUS-Client-IP-Address = "%{Packet-Src-IP-Address}"
+				&FreeRADIUS-Client-Shortname  = "%{sql: SELECT COALESCE(shortname, nasname) FROM nas WHERE nasname = '%{Packet-Src-IP-Address}'}"
+				&FreeRADIUS-Client-Secret     = "%{sql: SELECT secret FROM nas WHERE nasname = '%{Packet-Src-IP-Address}'}"
+				&FreeRADIUS-Client-NAS-Type   = "%{sql: SELECT COALESCE(type, 'other') FROM nas WHERE nasname = '%{Packet-Src-IP-Address}'}"
+				&FreeRADIUS-Client-Virtual-Server = "default"
+			}
+			ok
+		}
+		else {
+			#  NAS tidak terdaftar — reject. Klien yang IP-nya tidak
+			#  terdaftar akan di-drop (default behavior FreeRADIUS).
+			reject
+		}
+	}
+}
