@@ -114,5 +114,5 @@ func main() {
 	handlers.RegisterAudit(adminOnly)
 	handlers.RegisterWebhooks(adminOnly)
 
-	log.Fatal(app.Listen(":8000"))
+	log.Fatal(app.Listen(":" + config.Port))
 }

@@ -172,10 +172,10 @@ type BulkUserResult struct {
 }
 
 type BulkUserResponse struct {
-	Total    int              `json:"total"`
-	Created  int              `json:"created"`
-	Failed   int              `json:"failed"`
-	Results  []BulkUserResult `json:"results"`
+	Total   int              `json:"total"`
+	Created int              `json:"created"`
+	Failed  int              `json:"failed"`
+	Results []BulkUserResult `json:"results"`
 }
 
 // ---- Dashboard stats ----
@@ -208,10 +208,10 @@ type AuthSummary struct {
 // ---- IP pool ----
 
 type PoolSummary struct {
-	PoolName    string `json:"pool_name"`
-	Total       int64  `json:"total"`
-	Allocated   int64  `json:"allocated"`
-	Available   int64  `json:"available"`
+	PoolName  string `json:"pool_name"`
+	Total     int64  `json:"total"`
+	Allocated int64  `json:"allocated"`
+	Available int64  `json:"available"`
 }
 
 // ---- Webhooks ----
@@ -314,35 +314,43 @@ type V1NASCreate struct {
 }
 
 type V1Radacct struct {
-	AcctSessionID       string  `json:"acctsessionid"`
-	AcctUniqueID        string  `json:"acctuniqueid"`
-	Username            string  `json:"username"`
-	Realm               string  `json:"realm"`
-	NASIPAddress        string  `json:"nasipaddress"`
-	NASPortID           string  `json:"nasportid"`
-	NASPortType         string  `json:"nasporttype"`
-	AcctStartTime       *string `json:"acctstarttime"`
-	AcctUpdateTime      *string `json:"acctupdatetime"`
-	AcctStopTime        *string `json:"acctstoptime"`
-	AcctInterval        int     `json:"acctinterval"`
-	AcctSessionTime     int     `json:"acctsessiontime"`
-	AcctAuthentic       string  `json:"acctauthentic"`
-	ConnectInfoStart    string  `json:"connectinfo_start"`
-	ConnectInfoStop     string  `json:"connectinfo_stop"`
-	AcctInputOctets     int64   `json:"acctinputoctets"`
-	AcctOutputOctets    int64   `json:"acctoutputoctets"`
-	CalledStationID     string  `json:"calledstationid"`
-	CallingStationID    string  `json:"callingstationid"`
-	AcctTerminateCause  string  `json:"acctterminatecause"`
-	ServiceType         string  `json:"servicetype"`
-	FramedProtocol      string  `json:"framedprotocol"`
-	FramedIPAddress     string  `json:"framedipaddress"`
-	RadAcctID           uint64  `json:"radacctid"`
+	AcctSessionID      string  `json:"acctsessionid"`
+	AcctUniqueID       string  `json:"acctuniqueid"`
+	Username           string  `json:"username"`
+	Realm              string  `json:"realm"`
+	NASIPAddress       string  `json:"nasipaddress"`
+	NASPortID          string  `json:"nasportid"`
+	NASPortType        string  `json:"nasporttype"`
+	AcctStartTime      *string `json:"acctstarttime"`
+	AcctUpdateTime     *string `json:"acctupdatetime"`
+	AcctStopTime       *string `json:"acctstoptime"`
+	AcctInterval       int     `json:"acctinterval"`
+	AcctSessionTime    int     `json:"acctsessiontime"`
+	AcctAuthentic      string  `json:"acctauthentic"`
+	ConnectInfoStart   string  `json:"connectinfo_start"`
+	ConnectInfoStop    string  `json:"connectinfo_stop"`
+	AcctInputOctets    int64   `json:"acctinputoctets"`
+	AcctOutputOctets   int64   `json:"acctoutputoctets"`
+	CalledStationID    string  `json:"calledstationid"`
+	CallingStationID   string  `json:"callingstationid"`
+	AcctTerminateCause string  `json:"acctterminatecause"`
+	ServiceType        string  `json:"servicetype"`
+	FramedProtocol     string  `json:"framedprotocol"`
+	FramedIPAddress    string  `json:"framedipaddress"`
+	RadAcctID          uint64  `json:"radacctid"`
 }
 
 type V1UserStatus struct {
-	Username string     `json:"username"`
-	Online   bool       `json:"online"`
+	Username string `json:"username"`
+	Online   bool   `json:"online"`
+	// IsOnline — nama yang DIBACA pemanggil (backend ERP men-decode ke
+	// `json:"is_online"`). Tanpa field ini, json.Unmarshal mengabaikan `online`
+	// dan IsOnline SELALU false — tanpa galat, tanpa jejak. Akibatnya cabang
+	// "pelanggan ONLINE tapi sesinya terdaftar dengan username lain" tak pernah
+	// tercapai, sehingga isolir yang tidak menggigit tercatat sebagai kabar
+	// jinak "pelanggan tidak online". Dikirim BERDUA (bukan diganti) supaya
+	// pemanggil lama yang membaca `online` tetap jalan.
+	IsOnline bool       `json:"is_online"`
 	Session  *V1Radacct `json:"session"`
 }
 
@@ -360,4 +368,16 @@ type V1DisconnectResponse struct {
 	NASIPAddress  string `json:"nasipaddress"`
 	Port          int    `json:"port"`
 	AcctSessionID string `json:"acctsessionid"`
+
+	// ── Bentuk lama (aplikasi Python) — dikirim BERSAMAAN, bukan pengganti ──
+	//
+	// Pemanggil yang sudah ada membaca nama-nama ini. Yang paling menentukan
+	// adalah `output`: alat diagnosa cmd/periksa-jalur-kick memutuskan sebuah
+	// NAS "HIDUP (router menjawab)" HANYA dari strings.Contains(Output,
+	// "Received Disconnect"). Kalau kosong, SETIAP NAS dilaporkan tak menjawab —
+	// negatif palsu yang menyuruh operator mengejar kerusakan yang tak ada.
+	Success    bool   `json:"success"`
+	Output     string `json:"output"`
+	ReturnCode int    `json:"return_code"`
+	NasIP      string `json:"nas_ip"`
 }

@@ -96,6 +96,10 @@ func disconnectSession(c *fiber.Ctx) error {
 	}
 
 	addr := net.JoinHostPort(sess.NASIPAddress, strconv.Itoa(port))
+	if err := lengkapiMessageAuthenticator(packet); err != nil {
+		return apierr.Internal(c, "message-authenticator: "+err.Error())
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -103,7 +107,7 @@ func disconnectSession(c *fiber.Ctx) error {
 	response, err := client.Exchange(ctx, packet, addr)
 	if err != nil {
 		return c.Status(504).JSON(fiber.Map{
-			"error": "Disconnect-Request failed: " + err.Error(),
+			"error":        "Disconnect-Request failed: " + err.Error(),
 			"nasipaddress": sess.NASIPAddress,
 			"port":         port,
 		})

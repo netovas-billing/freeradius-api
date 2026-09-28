@@ -3,6 +3,7 @@ package database
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"time"
 
 	"gorm.io/driver/mysql"
@@ -17,8 +18,12 @@ var DB *gorm.DB
 
 func Init() {
 	dsn := fmt.Sprintf(
-		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=Local",
+		// loc EKSPLISIT, bukan Local: kolom waktu radacct naif (WIB) dan
+		// loc=Local membuat penafsirannya ikut TZ sistem — bergeser 7 jam di VM
+		// ber-TZ UTC, langsung masuk ke angka tagihan tanpa galat apa pun.
+		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=%s",
 		config.DBUser, config.DBPassword, config.DBHost, config.DBPort, config.DBName,
+		url.QueryEscape(config.DBTimeZone),
 	)
 
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{

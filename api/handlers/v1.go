@@ -22,7 +22,6 @@ import (
 	"freeradius-api/schemas"
 )
 
-
 func RegisterV1(r fiber.Router) {
 	v := r.Group("/v1")
 
@@ -1050,10 +1049,10 @@ func v1UserStatus(c *fiber.Ctx) error {
 		Order("acctstarttime DESC").
 		First(&r).Error
 	if err != nil {
-		return c.JSON(schemas.V1UserStatus{Username: username, Online: false})
+		return c.JSON(schemas.V1UserStatus{Username: username, Online: false, IsOnline: false})
 	}
 	s := acctOut(r)
-	return c.JSON(schemas.V1UserStatus{Username: username, Online: true, Session: &s})
+	return c.JSON(schemas.V1UserStatus{Username: username, Online: true, IsOnline: true, Session: &s})
 }
 
 // ===== DISCONNECT =====
@@ -1067,7 +1066,7 @@ func v1UserStatus(c *fiber.Ctx) error {
 // @Produce json
 // @Param body body schemas.V1DisconnectRequest true "Disconnect payload"
 // @Success 200 {object} schemas.V1DisconnectResponse
-// @Failure 404 {object} schemas.ErrorResponse
+// @Failure 404 {object} schemas.ErrorResponse "NAS belum terdaftar di tabel `nas`"
 // @Failure 504 {object} schemas.ErrorResponse
 // @Router /api/v1/disconnect [post]
 func v1Disconnect(c *fiber.Ctx) error {
@@ -1086,7 +1085,25 @@ func v1Disconnect(c *fiber.Ctx) error {
 	var sess models.Radacct
 	if err := q.Order("acctstarttime DESC").First(&sess).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return apierr.NotFound(c, "No active session for user")
+			// 200, BUKAN 404 — dan ini bukan kosmetik.
+			//
+			// Pelanggan offline adalah keadaan PALING SERING, bukan kegagalan.
+			// Aplikasi Python menjawabnya 200 (router membalas Disconnect-NAK),
+			// dan pemanggil membedakan "server tak terjangkau" (error) dari
+			// "router menolak" (200 + tidak-diterima). Dengan 404, pemanggil
+			// membaca SEMUA non-2xx sebagai server mati: ia salah menuduh jalur
+			// yang sehat, jatuh ke jalur cadangan yang percuma, dan — terburuk —
+			// mencatat kegagalan ke pemutus-arusnya. Tiga pelanggan offline
+			// berurutan pada satu NAS sudah cukup membuka sirkuit itu, dan
+			// sesudahnya tendangan yang NYATA pun dilewati tanpa dicoba.
+			return c.JSON(schemas.V1DisconnectResponse{
+				Status:   "rejected",
+				Code:     "no-active-session",
+				Username: p.Username,
+				Success:  false,
+				Output: "No active session for user " + p.Username +
+					" — no Disconnect-Request sent",
+			})
 		}
 		return apierr.Internal(c, err.Error())
 	}
@@ -1119,6 +1136,10 @@ func v1Disconnect(c *fiber.Ctx) error {
 		}
 	}
 
+	if err := lengkapiMessageAuthenticator(pkt); err != nil {
+		return apierr.Internal(c, "message-authenticator: "+err.Error())
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	addr := net.JoinHostPort(sess.NASIPAddress, strconv.Itoa(port))
@@ -1138,5 +1159,12 @@ func v1Disconnect(c *fiber.Ctx) error {
 		Status: status, Code: resp.Code.String(),
 		Username: sess.Username, NASIPAddress: sess.NASIPAddress, Port: port,
 		AcctSessionID: sess.AcctSessionID,
+		// Bentuk lama. `output` ditulis mengikuti format keluaran radclient
+		// karena ada alat yang memutuskan "router menjawab" dari substring
+		// "Received Disconnect" di dalamnya.
+		Success: status == "acknowledged",
+		Output: "Received " + resp.Code.String() + " Id " +
+			strconv.Itoa(int(resp.Identifier)) + " from " + addr,
+		NasIP: sess.NASIPAddress,
 	})
 }
