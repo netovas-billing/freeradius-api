@@ -52,6 +52,19 @@ func Init() {
 		&models.Webhook{},
 		&models.WebhookDelivery{},
 	); err != nil {
-		log.Fatalf("automigrate failed: %v", err)
+		// Pesan yang bisa DITINDAK, bukan sekadar "automigrate failed".
+		//
+		// Sebab paling sering sejauh ini: user basis data instance hanya punya
+		// SELECT/INSERT/UPDATE/DELETE. Tabel-tabel di atas milik API ini sendiri
+		// dan dibuat saat start, jadi tanpa CREATE prosesnya mati di sini — dan
+		// yang terlihat operator cuma "API service gagal start!" tanpa petunjuk
+		// apa pun. Aplikasi Python tak pernah butuh hak itu karena ia tak pernah
+		// membuat tabel, jadi instance lama tidak memperlihatkan gejala ini.
+		log.Fatalf("automigrate gagal: %v\n"+
+			"  Tabel yang dibuat API ini: api_keys, api_audit_log, webhooks, webhook_deliveries.\n"+
+			"  Kalau galatnya soal izin, user DB %q kurang hak. Perbaiki sebagai root MariaDB:\n"+
+			"    GRANT SELECT,INSERT,UPDATE,DELETE,CREATE,ALTER,INDEX,REFERENCES ON `%s`.* TO '%s'@'localhost';\n"+
+			"    FLUSH PRIVILEGES;",
+			err, config.DBUser, config.DBName, config.DBUser)
 	}
 }
