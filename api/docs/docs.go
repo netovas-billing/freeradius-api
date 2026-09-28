@@ -4179,11 +4179,19 @@ const docTemplate = `{
         "schemas.V1DisconnectRequest": {
             "type": "object",
             "properties": {
+                "nas_ip": {
+                    "type": "string"
+                },
                 "nas_ip_address": {
+                    "description": "NASIPAddress dan NasIP adalah nama yang SAMA artinya.\n\n` + "`" + `nas_ip` + "`" + ` adalah nama yang didokumentasikan aplikasi Python dan yang\ndipakai konsumen lain (Swagger, billing-backend AdonisJS). Backend ERP\nmengirim KEDUANYA sekaligus — lihat komentar di\nradiusclient/disconnect_api.go: \"mengirim keduanya lebih murah daripada\nmendeteksi versi\". Menerima hanya satu berarti pemanggil yang mengikuti\ndokumentasi Python diam-diam kehilangan field ini.",
                     "type": "string"
                 },
                 "port": {
                     "type": "integer"
+                },
+                "radius_secret": {
+                    "description": "RadiusSecret — secret NAS yang diserahkan PEMANGGIL.\n\nAplikasi Python menerimanya dan memakainya langsung (radclient\n\u003cnas_ip\u003e:\u003cport\u003e disconnect \u003csecret\u003e), sehingga NAS tidak perlu terdaftar\ndi tabel ` + "`" + `nas` + "`" + ` instance ini. Backend ERP MENGIRIMNYA di jalur isolir utama\n(customer/service.go: RadiusSecret: n.Secret), jadi mengabaikannya berarti\nsetiap NAS yang ada di ERP tapi belum terdaftar di tabel ` + "`" + `nas` + "`" + ` berhenti\nbisa diisolir — padahal sebelumnya jalan.",
+                    "type": "string"
                 },
                 "timeout_ms": {
                     "type": "integer"

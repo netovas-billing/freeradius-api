@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -1078,39 +1079,77 @@ func v1Disconnect(c *fiber.Ctx) error {
 		return nil
 	}
 
+	// `nas_ip` dan `nas_ip_address` SAMA artinya. Yang pertama didokumentasikan
+	// aplikasi Python dan dipakai konsumen lain; backend ERP mengirim keduanya.
+	nasIPMinta := strings.TrimSpace(p.NASIPAddress)
+	if nasIPMinta == "" {
+		nasIPMinta = strings.TrimSpace(p.NasIP)
+	}
+	secretMinta := strings.TrimSpace(p.RadiusSecret)
+
+	// Sesi dicari untuk melengkapi atribut (Acct-Session-Id, Framed-IP) dan
+	// untuk menebak NAS bila pemanggil tak menyebutkannya. Ketiadaannya BUKAN
+	// penghalang — lihat di bawah.
 	q := database.DB.Where("username = ? AND acctstoptime IS NULL", p.Username)
-	if p.NASIPAddress != "" {
-		q = q.Where("nasipaddress = ?", p.NASIPAddress)
+	if nasIPMinta != "" {
+		q = q.Where("nasipaddress = ?", nasIPMinta)
 	}
 	var sess models.Radacct
+	adaSesi := true
 	if err := q.Order("acctstarttime DESC").First(&sess).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			// 200, BUKAN 404 — dan ini bukan kosmetik.
-			//
-			// Pelanggan offline adalah keadaan PALING SERING, bukan kegagalan.
-			// Aplikasi Python menjawabnya 200 (router membalas Disconnect-NAK),
-			// dan pemanggil membedakan "server tak terjangkau" (error) dari
-			// "router menolak" (200 + tidak-diterima). Dengan 404, pemanggil
-			// membaca SEMUA non-2xx sebagai server mati: ia salah menuduh jalur
-			// yang sehat, jatuh ke jalur cadangan yang percuma, dan — terburuk —
-			// mencatat kegagalan ke pemutus-arusnya. Tiga pelanggan offline
-			// berurutan pada satu NAS sudah cukup membuka sirkuit itu, dan
-			// sesudahnya tendangan yang NYATA pun dilewati tanpa dicoba.
-			return c.JSON(schemas.V1DisconnectResponse{
-				Status:   "rejected",
-				Code:     "no-active-session",
-				Username: p.Username,
-				Success:  false,
-				Output: "No active session for user " + p.Username +
-					" — no Disconnect-Request sent",
-			})
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return apierr.Internal(c, err.Error())
 		}
-		return apierr.Internal(c, err.Error())
+		adaSesi = false
 	}
 
-	var nas models.NAS
-	if err := database.DB.Where("nasname = ?", sess.NASIPAddress).First(&nas).Error; err != nil {
-		return apierr.NotFound(c, "NAS secret not registered in `nas` table — add it first")
+	nasIP := nasIPMinta
+	if nasIP == "" && adaSesi {
+		nasIP = sess.NASIPAddress
+	}
+
+	// TANPA sesi aktif, paket TETAP dikirim selama tujuannya diketahui.
+	//
+	// Aplikasi Python tidak pernah melihat radacct: ia menjalankan
+	// `radclient <nas_ip>:<port> disconnect <secret>` dengan User-Name saja.
+	// Jadi pelanggan yang SEDANG ONLINE tapi baris radacct-nya sudah tertutup
+	// (dibersihkan autoclearzombie, atau accounting-nya tak sampai) TETAP
+	// tertendang di Python. Menolak lebih awal di sini membuat isolir diam-diam
+	// berhenti menggigit justru pada kasus yang paling perlu.
+	//
+	// 200, BUKAN 404, saat tujuannya memang tak bisa ditebak: pemanggil
+	// membedakan "server tak terjangkau" (error) dari "tidak ditendang"
+	// (200 + tidak-diterima). Dengan non-2xx, backend membacanya sebagai server
+	// mati, jatuh ke jalur cadangan yang percuma, dan mencatat kegagalan ke
+	// PEMUTUS-ARUS-nya — tiga pelanggan offline berurutan pada satu NAS sudah
+	// cukup membukanya, dan sesudahnya tendangan yang NYATA pun dilewati.
+	if nasIP == "" {
+		return c.JSON(schemas.V1DisconnectResponse{
+			Status:   "rejected",
+			Code:     "no-active-session",
+			Username: p.Username,
+			Success:  false,
+			Output: "No active session for user " + p.Username +
+				" and no nas_ip supplied — no Disconnect-Request sent",
+		})
+	}
+
+	// Secret dari PEMANGGIL lebih dulu.
+	//
+	// Aplikasi Python memakainya langsung, sehingga NAS tak perlu terdaftar di
+	// tabel `nas` instance ini. Backend ERP mengirimnya di jalur isolir utama
+	// (customer/service.go: RadiusSecret: n.Secret). Mengabaikannya berarti
+	// setiap NAS yang ada di ERP tapi belum terdaftar di sini berhenti bisa
+	// diisolir — padahal sebelumnya jalan.
+	secret := secretMinta
+	if secret == "" {
+		var nas models.NAS
+		if err := database.DB.Where("nasname = ?", nasIP).First(&nas).Error; err != nil {
+			return apierr.NotFound(c,
+				"NAS "+nasIP+" tidak terdaftar di tabel `nas` dan radius_secret tidak dikirim — "+
+					"daftarkan NAS-nya, atau sertakan radius_secret pada permintaan")
+		}
+		secret = nas.Secret
 	}
 
 	port := p.Port
@@ -1121,18 +1160,24 @@ func v1Disconnect(c *fiber.Ctx) error {
 	if timeout == 0 {
 		timeout = 3 * time.Second
 	}
-	nasIP := net.ParseIP(sess.NASIPAddress)
-	if nasIP == nil {
-		return apierr.BadRequest(c, "Invalid NAS IP address")
+	ip := net.ParseIP(nasIP)
+	if ip == nil {
+		return apierr.BadRequest(c, "Invalid NAS IP address: "+nasIP)
 	}
 
-	pkt := radius.New(radius.CodeDisconnectRequest, []byte(nas.Secret))
-	_ = rfc2865.UserName_SetString(pkt, sess.Username)
-	_ = rfc2866.AcctSessionID_SetString(pkt, sess.AcctSessionID)
-	_ = rfc2865.NASIPAddress_Set(pkt, nasIP)
-	if sess.FramedIPAddress != "" {
-		if ip := net.ParseIP(sess.FramedIPAddress); ip != nil {
-			_ = rfc2865.FramedIPAddress_Set(pkt, ip)
+	pkt := radius.New(radius.CodeDisconnectRequest, []byte(secret))
+	_ = rfc2865.UserName_SetString(pkt, p.Username)
+	_ = rfc2865.NASIPAddress_Set(pkt, ip)
+	// Atribut sesi hanya bila sesinya memang ada. Mengirim Acct-Session-Id
+	// kosong membuat sebagian NAS menolak paketnya.
+	if adaSesi {
+		if sess.AcctSessionID != "" {
+			_ = rfc2866.AcctSessionID_SetString(pkt, sess.AcctSessionID)
+		}
+		if sess.FramedIPAddress != "" {
+			if fip := net.ParseIP(sess.FramedIPAddress); fip != nil {
+				_ = rfc2865.FramedIPAddress_Set(pkt, fip)
+			}
 		}
 	}
 
@@ -1142,7 +1187,7 @@ func v1Disconnect(c *fiber.Ctx) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	addr := net.JoinHostPort(sess.NASIPAddress, strconv.Itoa(port))
+	addr := net.JoinHostPort(nasIP, strconv.Itoa(port))
 	resp, err := (&radius.Client{}).Exchange(ctx, pkt, addr)
 	if err != nil {
 		return apierr.GatewayTimeout(c, "disconnect failed: "+err.Error())
@@ -1157,14 +1202,14 @@ func v1Disconnect(c *fiber.Ctx) error {
 	}
 	return c.JSON(schemas.V1DisconnectResponse{
 		Status: status, Code: resp.Code.String(),
-		Username: sess.Username, NASIPAddress: sess.NASIPAddress, Port: port,
+		Username: p.Username, NASIPAddress: nasIP, Port: port,
 		AcctSessionID: sess.AcctSessionID,
-		// Bentuk lama. `output` ditulis mengikuti format keluaran radclient
-		// karena ada alat yang memutuskan "router menjawab" dari substring
+		// Bentuk lama. `output` mengikuti format keluaran radclient karena ada
+		// alat yang memutuskan "router menjawab" dari substring
 		// "Received Disconnect" di dalamnya.
 		Success: status == "acknowledged",
 		Output: "Received " + resp.Code.String() + " Id " +
 			strconv.Itoa(int(resp.Identifier)) + " from " + addr,
-		NasIP: sess.NASIPAddress,
+		NasIP: nasIP,
 	})
 }

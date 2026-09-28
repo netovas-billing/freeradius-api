@@ -355,10 +355,31 @@ type V1UserStatus struct {
 }
 
 type V1DisconnectRequest struct {
-	Username     string `json:"username"`
+	Username string `json:"username"`
+
+	// NASIPAddress dan NasIP adalah nama yang SAMA artinya.
+	//
+	// `nas_ip` adalah nama yang didokumentasikan aplikasi Python dan yang
+	// dipakai konsumen lain (Swagger, billing-backend AdonisJS). Backend ERP
+	// mengirim KEDUANYA sekaligus — lihat komentar di
+	// radiusclient/disconnect_api.go: "mengirim keduanya lebih murah daripada
+	// mendeteksi versi". Menerima hanya satu berarti pemanggil yang mengikuti
+	// dokumentasi Python diam-diam kehilangan field ini.
 	NASIPAddress string `json:"nas_ip_address,omitempty"`
-	Port         int    `json:"port,omitempty"`
-	TimeoutMs    int    `json:"timeout_ms,omitempty"`
+	NasIP        string `json:"nas_ip,omitempty"`
+
+	// RadiusSecret — secret NAS yang diserahkan PEMANGGIL.
+	//
+	// Aplikasi Python menerimanya dan memakainya langsung (radclient
+	// <nas_ip>:<port> disconnect <secret>), sehingga NAS tidak perlu terdaftar
+	// di tabel `nas` instance ini. Backend ERP MENGIRIMNYA di jalur isolir utama
+	// (customer/service.go: RadiusSecret: n.Secret), jadi mengabaikannya berarti
+	// setiap NAS yang ada di ERP tapi belum terdaftar di tabel `nas` berhenti
+	// bisa diisolir — padahal sebelumnya jalan.
+	RadiusSecret string `json:"radius_secret,omitempty"`
+
+	Port      int `json:"port,omitempty"`
+	TimeoutMs int `json:"timeout_ms,omitempty"`
 }
 
 type V1DisconnectResponse struct {
