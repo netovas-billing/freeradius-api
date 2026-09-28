@@ -2,7 +2,17 @@
 freeradius/raddb/
 
 # Go
-api/docs/
 api/freeradius-api
 api/*.test
-api/vendor/
+
+# api/docs/ dan api/vendor/ SENGAJA TIDAK diabaikan.
+#
+# main.go mengimpor `freeradius-api/docs` secara KERAS (blank import untuk
+# Swagger), jadi tanpa docs/ ter-commit, `git clone` + `go build` GAGAL —
+# dan itulah cara instance ini dipasang di VM (tak ada `swag` di sana).
+#
+# vendor/ di-commit supaya build TIDAK butuh jaringan sama sekali. VM RADIUS
+# duduk di belakang VPN dengan egress tersaring: terbukti 28 Sep 2026 saat
+# `apk add` gagal dengan "Permission denied" ke dl-cdn.alpinelinux.org meski
+# Docker Hub jalan. Menarik modul saat provisioning juga berarti kode yang
+# dibangun bisa berbeda antar-instance; vendor menghapus dua masalah itu.
