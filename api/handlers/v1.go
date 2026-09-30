@@ -14,8 +14,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 	"layeh.com/radius"
-	"layeh.com/radius/rfc2865"
-	"layeh.com/radius/rfc2866"
 
 	"freeradius-api/apierr"
 	"freeradius-api/database"
@@ -1165,26 +1163,16 @@ func v1Disconnect(c *fiber.Ctx) error {
 		return apierr.BadRequest(c, "Invalid NAS IP address: "+nasIP)
 	}
 
-	pkt := radius.New(radius.CodeDisconnectRequest, []byte(secret))
-	_ = rfc2865.UserName_SetString(pkt, p.Username)
-	_ = rfc2865.NASIPAddress_Set(pkt, ip)
-	// Atribut sesi hanya bila sesinya memang ada. Mengirim Acct-Session-Id
-	// kosong membuat sebagian NAS menolak paketnya.
+	// Perakitan paket ada di SATU tempat, bangunPaketDisconnect (msgauth.go),
+	// beserta alasan kenapa atributnya seminimal itu.
+	acctSID := ""
 	if adaSesi {
-		if sess.AcctSessionID != "" {
-			_ = rfc2866.AcctSessionID_SetString(pkt, sess.AcctSessionID)
-		}
-		if sess.FramedIPAddress != "" {
-			if fip := net.ParseIP(sess.FramedIPAddress); fip != nil {
-				_ = rfc2865.FramedIPAddress_Set(pkt, fip)
-			}
-		}
+		acctSID = sess.AcctSessionID
 	}
-
-	if err := lengkapiMessageAuthenticator(pkt); err != nil {
-		return apierr.Internal(c, "message-authenticator: "+err.Error())
+	pkt, perr := bangunPaketDisconnect(secret, p.Username, acctSID)
+	if perr != nil {
+		return apierr.Internal(c, "build disconnect packet: "+perr.Error())
 	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	addr := net.JoinHostPort(nasIP, strconv.Itoa(port))

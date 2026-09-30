@@ -10,8 +10,6 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 	"layeh.com/radius"
-	"layeh.com/radius/rfc2865"
-	"layeh.com/radius/rfc2866"
 
 	"freeradius-api/apierr"
 	"freeradius-api/database"
@@ -82,23 +80,12 @@ func disconnectSession(c *fiber.Ctx) error {
 		return apierr.BadRequest(c, "Invalid NAS IP address")
 	}
 
-	packet := radius.New(radius.CodeDisconnectRequest, []byte(nas.Secret))
-	_ = rfc2865.UserName_SetString(packet, sess.Username)
-	_ = rfc2866.AcctSessionID_SetString(packet, sess.AcctSessionID)
-	_ = rfc2865.NASIPAddress_Set(packet, nasIP)
-	if sess.FramedIPAddress != "" {
-		if ip := net.ParseIP(sess.FramedIPAddress); ip != nil {
-			_ = rfc2865.FramedIPAddress_Set(packet, ip)
-		}
-	}
-	if sess.CallingStationID != "" {
-		_ = rfc2865.CallingStationID_SetString(packet, sess.CallingStationID)
+	packet, perr := bangunPaketDisconnect(nas.Secret, sess.Username, sess.AcctSessionID)
+	if perr != nil {
+		return apierr.Internal(c, "build disconnect packet: "+perr.Error())
 	}
 
 	addr := net.JoinHostPort(sess.NASIPAddress, strconv.Itoa(port))
-	if err := lengkapiMessageAuthenticator(packet); err != nil {
-		return apierr.Internal(c, "message-authenticator: "+err.Error())
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

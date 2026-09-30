@@ -4,6 +4,9 @@ import (
 	"crypto/hmac"
 	"crypto/md5"
 
+	"layeh.com/radius/rfc2865"
+	"layeh.com/radius/rfc2866"
+
 	"layeh.com/radius"
 	"layeh.com/radius/rfc2869"
 )
@@ -43,4 +46,34 @@ func lengkapiMessageAuthenticator(pkt *radius.Packet) error {
 	mac.Write(b)
 	pkt.Set(rfc2869.MessageAuthenticator_Type, radius.Attribute(mac.Sum(nil)))
 	return nil
+}
+
+// bangunPaketDisconnect — satu-satunya tempat paket Disconnect-Request dirakit.
+//
+// SATU tempat, karena dua handler (v1Disconnect dan disconnectSession) pernah
+// merakitnya sendiri-sendiri dan langsung berselisih: yang satu mengirim
+// Calling-Station-Id, yang lain tidak, dan keduanya mengirim NAS-IP-Address
+// serta Framed-IP-Address yang seharusnya tidak dikirim sama sekali. Selisih
+// seperti itu tak terlihat dari tes mana pun selama perakitnya dua.
+//
+// Isinya sengaja MINIMAL — lihat uraian panjang di v1.go: RFC 5176 menuntut
+// setiap atribut identifikasi yang dikirim COCOK dengan sesi di NAS, sehingga
+// tiap atribut tambahan adalah syarat baru yang bisa gagal. Python yang
+// digantikan repo ini hanya mengirim User-Name.
+func bangunPaketDisconnect(secret, username, acctSessionID string) (*radius.Packet, error) {
+	pkt := radius.New(radius.CodeDisconnectRequest, []byte(secret))
+	if err := rfc2865.UserName_SetString(pkt, username); err != nil {
+		return nil, err
+	}
+	// Nilai KOSONG bukan "tanpa saringan" melainkan "saring pada string
+	// kosong", dan itu tak pernah cocok dengan sesi mana pun.
+	if acctSessionID != "" {
+		if err := rfc2866.AcctSessionID_SetString(pkt, acctSessionID); err != nil {
+			return nil, err
+		}
+	}
+	if err := lengkapiMessageAuthenticator(pkt); err != nil {
+		return nil, err
+	}
+	return pkt, nil
 }
