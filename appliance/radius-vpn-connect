@@ -120,9 +120,40 @@ echo "\$(date -Is) ppp up: iface=\$1 local=\$4 remote=\$5 rute=${POOL_NAS}" \\
 EOF
 chmod +x /etc/ppp/ip-up.d/50-radius-route.sh
 
-systemctl enable --now xl2tpd
-sleep 2
-echo "c concentrator" >/var/run/xl2tpd/l2tp-control
+# JEBAKAN 4 — `enable --now` TIDAK memuat ulang config pada daemon yang SUDAH
+# jalan. Paket xl2tpd Debian menyalakan servicenya saat dipasang, yaitu dengan
+# xl2tpd.conf BAWAAN yang tak punya `[lac concentrator]` sama sekali. Jadi
+# `--now` pada unit yang sudah aktif tak melakukan apa pun, dan perintah
+# `c concentrator` di bawah menyebut LAC yang tidak dikenal daemon yang sedang
+# berjalan — diterima tanpa galat, tanpa ada yang mendial. Gejalanya persis
+# "tunnel tidak naik dalam 60 detik" tanpa sebab yang kelihatan.
+# RESTART, bukan --now.
+systemctl enable xl2tpd >/dev/null 2>&1 || true
+systemctl restart xl2tpd
+
+# JEBAKAN 5 — l2tp-control adalah FIFO yang dibuat xl2tpd saat ia START. Kalau
+# daemonnya mati (atau FIFO-nya belum ada), `echo > …` justru MEMBUAT berkas
+# biasa: exit 0, tak ada galat, dan perintah dial-nya hilang ke dalam berkas
+# yang tak dibaca siapa pun. Karena itu keberadaannya ditunggu DAN diperiksa
+# harus FIFO (-p), bukan sekadar ada.
+CONTROL=""
+for _ in $(seq 1 10); do
+  for kandidat in /var/run/xl2tpd/l2tp-control /run/xl2tpd/l2tp-control \
+                  /var/run/xl2tpd-control; do
+    [ -p "$kandidat" ] && CONTROL="$kandidat" && break
+  done
+  [ -n "$CONTROL" ] && break
+  sleep 1
+done
+[ -n "$CONTROL" ] || {
+  echo "GAGAL: xl2tpd tidak membuat socket kontrolnya — daemonnya tidak jalan." >&2
+  echo "--- status:" >&2
+  systemctl status xl2tpd --no-pager -n 20 2>&1 | sed 's/^/    /' >&2 ||
+    service xl2tpd status 2>&1 | sed 's/^/    /' >&2 || true
+  exit 1
+}
+
+echo "c concentrator" >"$CONTROL"
 
 echo -n "menunggu tunnel naik"
 for _ in $(seq 1 30); do
@@ -139,6 +170,26 @@ done
 
 echo
 echo "GAGAL: tunnel tidak naik dalam 60 detik." >&2
-echo "Periksa: appliance bisa internet keluar? host concentrator benar?" >&2
-echo "Log: journalctl -u xl2tpd -n 50" >&2
+echo >&2
+# Log-nya DICETAK, tidak cuma disuruh dibaca: yang menjalankan ini adalah orang
+# yang baru memasang appliance, dan "jalankan journalctl" berarti sesi
+# troubleshoot kedua yang bisa dihindari.
+echo "--- 25 baris terakhir log xl2tpd/pppd:" >&2
+if command -v journalctl >/dev/null; then
+  journalctl -u xl2tpd -n 25 --no-pager 2>&1 | sed 's/^/    /' >&2
+else
+  tail -n 25 /var/log/syslog 2>/dev/null | grep -iE 'xl2tpd|pppd' |
+    sed 's/^/    /' >&2 || true
+fi
+cat >&2 <<PETUNJUK
+
+Yang biasanya jadi sebab, berurutan:
+  1. "Unable to find a tunnel definition" → daemonnya memegang config lama.
+     Ulangi perintah ini; ia me-restart xl2tpd, bukan sekadar start.
+  2. "Maximum retries exceeded"/sunyi → UDP 1701 ke ${HOST} tak sampai.
+     Uji: nc -zvu ${HOST} 1701   (dan periksa NAT/firewall mitra)
+  3. "Authentication failed"/CHAP → user/sandi PPP tidak cocok dengan
+     /ppp secret di concentrator. Jangan ditebak: daftarkan ulang dari ERP,
+     sandinya hanya tampil sekali dan tak bisa dibaca lagi.
+PETUNJUK
 exit 1
