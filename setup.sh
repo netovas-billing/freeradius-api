@@ -50,14 +50,6 @@ muatEnv() {
 }
 muatEnv
 
-# Lolos-kan karakter yang bermakna di sisi GANTI sed: `\`, `&`, dan pembatas
-# `|`. Sandi yang dibangkitkan appliance adalah hex, tapi sandi yang diketik
-# tangan di .env tidak dibatasi — dan sed yang menelan `&` menanam sandi yang
-# BUKAN sandinya, lalu penjaga grep di bawah menolaknya tanpa petunjuk sebabnya.
-sediSandi() {
-  printf '%s' "$1" | sed -e 's|[\\&|]|\\&|g'
-}
-
 FR_TAG="${FR_TAG:-3.2.10}"
 IMAGE="freeradius/freeradius-server:${FR_TAG}"
 DB_PASSWORD="${DB_PASSWORD:-radiuspass_ganti}"
@@ -127,14 +119,13 @@ if [ -f "$SQL_CONF" ]; then
   # mencocokkan apa pun dan bootstrap berhenti di penjaga di bawah.
   # `certificate_password` tidak ikut tercocok karena `password` harus berada
   # langsung sesudah spasi awal.
-  sed -i -E 's|^#?([[:space:]]*)password[[:space:]]*=[[:space:]]*".*"|\1password = "'"$(sediSandi "$DB_PASSWORD")"'"|' \
+  sed -i -E 's|^#?([[:space:]]*)password[[:space:]]*=[[:space:]]*".*"|\1password = "'"$DB_PASSWORD"'"|' \
     "$SQL_CONF"
 
   # DIVERIFIKASI, tidak diasumsikan. Kegagalan sed di sini adalah kegagalan
   # paling mahal di seluruh berkas: ia tidak menghasilkan galat, hanya
   # FreeRADIUS yang tak bisa konek DB berjam-jam kemudian.
-  # -F: sandi acak boleh memuat karakter yang bermakna di regex.
-  grep -qF "password = \"$DB_PASSWORD\"" "$SQL_CONF" || {
+  grep -q "password = \"$DB_PASSWORD\"" "$SQL_CONF" || {
     echo "GAGAL menanam sandi DB ke $SQL_CONF — berhenti, auth akan mati senyap" >&2
     exit 1
   }

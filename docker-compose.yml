@@ -51,21 +51,12 @@ services:
     # setiap auth karena gagal konek DB.
 
   api:
-    # api/Dockerfile dibangun TANPA jaringan selain menarik dua base image:
-    # tak ada apk, tak ada go install, tak ada go mod tidy (vendor/ dan docs/
-    # ter-commit). Terbukti dengan `docker build --network=none` 13 Okt 2026.
     build: ./api
-    # Tidak pernah mencoba Docker Hub untuk nama yang hanya hidup di mesin ini.
-    # Tanpa ini `up` mengawali dengan `Image freeradius-api-local:1 Pulling`
-    # yang pasti gagal, lalu baru membangun — perjalanan sia-sia yang di
-    # appliance tanpa egress registry berarti menggantung sebelum memulai.
-    # Kalau image-nya belum ada, compose TETAP membangun (diuji 13 Okt 2026).
-    pull_policy: never
     # image: DIBERI NAMA supaya firstboot.sh bisa memastikan image-nya memang
-    # sudah ada di appliance SEBELUM `up`. Appliance mitra bisa berada di
-    # jaringan dengan egress tersaring (terbukti 28 Sep 2026: `apk add` gagal
-    # ke dl-cdn.alpinelinux.org meski Docker Hub jalan), jadi `up` yang
-    # diam-diam mencoba membangun ulang akan menggantung tanpa penjelasan.
+    # sudah ada di appliance SEBELUM `up`. Membangun menuntut jaringan yang
+    # sehat (registry, dl-cdn Alpine, proxy modul Go) dan jaringan mitra tak
+    # bisa diperiksa dulu, jadi `up` yang diam-diam mencoba membangun ulang
+    # akan menggantung tanpa penjelasan. Appliance TIDAK membangun apa pun.
     # Nama hasil build compose bergantung nama direktori proyek — terlalu
     # rapuh untuk dijadikan patokan pemeriksaan.
     image: freeradius-api-local:1

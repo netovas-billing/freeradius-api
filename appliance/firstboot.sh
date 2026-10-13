@@ -95,7 +95,7 @@ if [ -f "$SQL_CONF" ]; then
   # DIVERIFIKASI, tidak diasumsikan. Kegagalan sed di sini adalah kegagalan
   # paling mahal di seluruh berkas ini — ia tidak menghasilkan galat, hanya
   # FreeRADIUS yang tak bisa konek DB berjam-jam kemudian.
-  grep -qF "password = \"${DB_PASSWORD}\"" "$SQL_CONF" || {
+  grep -q "password = \"${DB_PASSWORD}\"" "$SQL_CONF" || {
     echo "GAGAL menanam sandi DB ke $SQL_CONF — jangan lanjut, auth akan mati senyap" >&2
     exit 1
   }

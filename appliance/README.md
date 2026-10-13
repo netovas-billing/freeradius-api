@@ -63,59 +63,46 @@ apt install -y xl2tpd curl openssl
 ./appliance/install-appliance.sh
 ```
 
-`docker compose build` wajib di sini, bukan di tempat mitra: appliance bisa
-berada di jaringan dengan egress tersaring — terbukti 28 Sep 2026 saat
-`apk add` gagal ke `dl-cdn.alpinelinux.org` meski Docker Hub jalan. `firstboot.sh`
-memeriksa image `freeradius-api-local:1` ada **sebelum** `up`, dan melapor
-terang-terangan kalau tidak — bukan menggantung tanpa penjelasan.
+`docker compose build` wajib di sini, bukan di tempat mitra: build menuntut
+jaringan yang sehat (registry, dl-cdn Alpine, proxy modul Go), dan jaringan
+mitra tidak bisa kamu periksa dulu — dua kali gagal di mesin sendiri, lihat
+bagian berikutnya. `firstboot.sh` memeriksa image `freeradius-api-local:1` ada
+**sebelum** `up`, dan melapor terang-terangan kalau tidak — bukan menggantung
+tanpa penjelasan.
 
-### Build image api tidak butuh jaringan
+### Kalau `apk add` menggantung saat build
 
-Sejak 13 Okt 2026 `api/Dockerfile` tidak lagi memanggil `apk add`,
-`go install`, maupun `go mod tidy`: dependensi datang dari `api/vendor/`,
-Swagger dari `api/docs/` yang ter-commit, zona waktu dari tag build
-`timetzdata`, dan health check dari `wget` bawaan busybox. Yang masih perlu
-jaringan hanyalah menarik dua base image.
+Gejalanya: `docker pull` berhasil, lalu `RUN apk add` menggantung puluhan detik
+per repo dan berakhir `WARNING: fetching …: Permission denied`. Dua kali
+menghentikan pemasangan (28 Sep & 13 Okt 2026), dan **penyebabnya bukan Alpine,
+bukan Docker, bukan repo ini**: TTL.
 
-Dibuktikan, bukan diyakini:
+Pada 13 Okt 2026 `ping` dari MikroTik lokal memperlihatkan balasan tiba dengan
+**TTL 2** — entah dari aturan `change-ttl` sendiri, entah dari ISP. Sisa dua hop
+itu cukup untuk router (0 hop) dan untuk host Debian (1 hop, paket untuk diri
+sendiri boleh TTL 1), tapi TIDAK untuk container: host harus **meneruskan**
+balasan itu ke `docker0`, penerusan mengurangi TTL satu, dan paketnya mati
+sebelum sampai. Itu sebabnya `docker pull` — yang bicara dari host — lancar,
+sementara `RUN apk add` di dalam build tidak pernah menerima jawaban.
 
-```bash
-docker build --network=none -t freeradius-api-local:1 api/
-```
-
-Itu menutup gejala yang dua kali menghentikan pemasangan: `docker pull`
-berhasil, lalu `RUN apk add` menggantung dan berakhir
-`WARNING: fetching …: Permission denied`. Keduanya memang jalur BERBEDA —
-`pull` lewat namespace jaringan daemon, `RUN` lewat namespace build (bridge
-sendiri, aturan FORWARD sendiri) — jadi "Docker Hub jalan" bukan bukti build
-punya jaringan.
-
-Konsekuensinya: `api/docs/` ikut ter-commit dan BISA basi terhadap handler.
-Regenerasi dilakukan pengembang di mesinnya, bukan di setiap build:
+Periksa dari mesinnya, tanpa masuk router:
 
 ```bash
-cd api && go run github.com/swaggo/swag/cmd/swag@v1.16.4 \
-  init -g main.go -o ./docs --parseInternal
+ping -c1 -t 64 1.1.1.1    # seperti trafik host
+ping -c1 -t 63 1.1.1.1    # seperti trafik container
 ```
 
-Kalau registry-nya sendiri yang tersaring, pindahkan image-nya — mesin golden
-image maupun appliance tidak perlu bisa membangun apa pun:
+Beda hasil = aturan/pemotongan TTL. Obatnya di MikroTik, bukan di Dockerfile —
+pulihkan TTL paket masuk di WAN:
 
-```bash
-docker compose build                                  # di mesin ber-internet
-docker save freeradius-api-local:1 | gzip > api.tgz   # salin
-gunzip -c api.tgz | docker load                       # di mesin tujuan
+```
+/ip firewall mangle add chain=prerouting in-interface=<WAN> \
+  action=change-ttl new-ttl=set:64 place-before=0
 ```
 
-Dan kalau `docker run --rm alpine:3.20 true` pun gagal menarik image, itu
-masalah host — bukan repo ini. Yang biasanya kena: `net.ipv4.ip_forward=0`,
-atau firewall yang memasang `FORWARD DROP/REJECT` sesudah Docker
-(ufw/nftables) sehingga rantai Docker tak lagi dilewati:
-
-```bash
-sysctl net.ipv4.ip_forward
-iptables -S FORWARD | head
-```
+Ini wajib dibereskan di setiap lokasi, bukan disiasati di build: appliance
+butuh jalan keluar sungguhan juga saat BERJALAN (L2TP ke concentrator, sinkron
+ke ERP), dan keduanya berangkat dari dalam container yang sama.
 
 Prosedur lengkap beserta sanitasi dan ekspor OVA ada di
 `backend-super-app/docs/SETUP-RADIUS-LOKAL-MITRA.md`.
