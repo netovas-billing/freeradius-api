@@ -33,12 +33,22 @@ USAGE
 HOST="$1"; USER_PPP="$2"; PASS_PPP="$3"; POOL_NAS="$4"
 API_USER="$5"; API_KEY="$6"
 
+# Konvensi sama dengan install-appliance.sh. Tanpa ini kegagalannya muncul di
+# tengah jalan — sesudah .env ditambal — sebagai "Permission denied" pada
+# berkas yang tak disebut mitra di mana pun.
+[ "$(id -u)" = "0" ] || { echo "jalankan sebagai root (sudo)" >&2; exit 1; }
+
 STACK_DIR="${STACK_DIR:-/opt/freeradius-api}"
 ENV_FILE="$STACK_DIR/.env"
 
 [ -f "$ENV_FILE" ] || {
   echo "GAGAL: $ENV_FILE tidak ada — firstboot belum jalan." >&2
   echo "Nyalakan ulang appliance, atau jalankan: systemctl start radius-appliance-firstboot" >&2
+  echo >&2
+  echo "Sedang MENGUJI di klona repo, bukan di appliance? Tunjuk direktorinya:" >&2
+  echo "  sudo STACK_DIR=\"\$PWD\" ./appliance/radius-erp-enroll ..." >&2
+  echo "(jangan jalankan firstboot.sh di mesin kerja — ia membangkitkan ulang" >&2
+  echo " host key SSH mesin ini dan menandai dirinya selesai)" >&2
   exit 1
 }
 
@@ -97,5 +107,20 @@ if [ "${kode:-}" != "200" ]; then
   exit 1
 fi
 
+# Saudara sebelah DULU, lalu PATH. Di appliance keduanya sama-sama ada di
+# /usr/local/sbin jadi tak ada bedanya; yang berbeda adalah saat skrip ini
+# dijalankan langsung dari klona repo (uji coba). Tanpa ini `exec` gagal dengan
+# "command not found" SESUDAH kredensial tertanam dan API sudah diverifikasi —
+# berhenti di tengah, dengan pesan yang tidak menyebut apa yang kurang.
+VPN_CONNECT="$(dirname "$(readlink -f "$0")")/radius-vpn-connect"
+[ -x "$VPN_CONNECT" ] || VPN_CONNECT="$(command -v radius-vpn-connect || true)"
+[ -n "$VPN_CONNECT" ] || {
+  echo "GAGAL: radius-vpn-connect tidak ada di sebelah skrip ini maupun di PATH." >&2
+  echo "Kredensial REST SUDAH tertanam dan terverifikasi — yang belum hanya VPN-nya." >&2
+  echo "Pasang lalu ulangi, atau jalankan langsung:" >&2
+  echo "  radius-vpn-connect $HOST $USER_PPP <sandi-ppp> $POOL_NAS" >&2
+  exit 1
+}
+
 echo "menyambungkan ke VPN concentrator ..."
-exec radius-vpn-connect "$HOST" "$USER_PPP" "$PASS_PPP" "$POOL_NAS"
+exec "$VPN_CONNECT" "$HOST" "$USER_PPP" "$PASS_PPP" "$POOL_NAS"

@@ -16,6 +16,11 @@ set -euo pipefail
 }
 HOST="$1"; USER_PPP="$2"; PASS_PPP="$3"; POOL_NAS="$4"
 
+# Skrip ini menulis /etc/xl2tpd, /etc/ppp, dan /etc/ppp/ip-up.d. Tanpa
+# pemeriksaan ini kegagalannya berupa "Permission denied" pada berkas pertama
+# yang ditulis — menyesatkan, karena yang kurang bukan berkasnya tapi hak akses.
+[ "$(id -u)" = "0" ] || { echo "jalankan sebagai root (sudo)" >&2; exit 1; }
+
 command -v xl2tpd >/dev/null || {
   echo "xl2tpd belum terpasang (NOC: apt install xl2tpd)" >&2
   exit 1

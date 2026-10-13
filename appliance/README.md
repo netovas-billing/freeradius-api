@@ -42,6 +42,41 @@ mematikan X-API-Key (`config.muatAPIKey`, gagal-tertutup) dan `BASIC_AUTH_*`
 kosong mematikan Basic (`middleware.APIKey`). Jadi tidak ada jendela terbuka
 antara boot pertama dan enroll.
 
+## Mencobanya di lab (berperan sebagai mitra)
+
+Appliance sungguhan: ketiga skrip ada di `/usr/local/sbin` (dipasang
+`install-appliance.sh` saat golden image dibuat), stack-nya di
+`/opt/freeradius-api`, dan `.env`-nya dibuat `firstboot.sh` pada boot pertama.
+Mitra tinggal menempelkan satu baris dari ERP.
+
+Di klona repo tak ada salah satu pun dari itu, jadi tunjuk direktorinya dan
+pasang `radius-vpn-connect` ke PATH — JANGAN jalankan `firstboot.sh` (lihat
+bagian berikutnya):
+
+```bash
+cd ~/freeradius-api
+./setup.sh && docker compose up -d          # .env lahir dari sini, bukan firstboot
+sudo apt install -y xl2tpd curl             # radius-vpn-connect butuh keduanya
+sudo STACK_DIR="$PWD" ./appliance/radius-erp-enroll \
+  <host-conc> <user-ppp> <sandi-ppp> <pool-nas> erp <api-key>
+```
+
+`radius-vpn-connect` dicari di sebelah skripnya dulu, baru PATH — jadi
+memanggil `./appliance/radius-erp-enroll` sudah cukup, tanpa memasang apa pun.
+
+Dua hal yang BEDA dari appliance sungguhan, supaya tidak menyimpulkan terlalu
+jauh dari hasil lab:
+
+1. `.env` lab dibuat `setup.sh`, yang mengisi `API_KEY` acak. Appliance
+   sungguhan lahir dengan `API_KEY` KOSONG dari `firstboot.sh`, jadi sifat
+   "menolak SEMUA panggilan API sebelum enroll" TIDAK berlaku di lab — di sini
+   X-API-Key sudah hidup sejak `setup.sh`.
+2. Sandi DB lab adalah bawaan `.env.example`, bukan sandi unik per instance.
+
+Langkah VPN-nya menyentuh `/etc/xl2tpd`, `/etc/ppp`, dan rute mesin ini. Kalau
+yang ingin diuji baru bagian kredensial + API, hentikan sesudah
+"memastikan kredensial berlaku OK" dan jangan lanjutkan ke concentrator.
+
 ## JANGAN jalankan `firstboot.sh` di lab
 
 Ia menulis `/var/lib/radius-appliance/firstboot-selesai`, dan tanda itu ikut ke
