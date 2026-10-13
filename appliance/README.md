@@ -69,5 +69,45 @@ berada di jaringan dengan egress tersaring — terbukti 28 Sep 2026 saat
 memeriksa image `freeradius-api-local:1` ada **sebelum** `up`, dan melapor
 terang-terangan kalau tidak — bukan menggantung tanpa penjelasan.
 
+### Kalau `docker compose build` sendiri tak bisa menjangkau Alpine
+
+Gejalanya khas dan menyesatkan: `docker pull` jalan, tapi `RUN apk add`
+menggantung lalu berkata `WARNING: fetching …: Permission denied`. Keduanya
+memang jalur yang BERBEDA — `pull` lewat namespace jaringan daemon, `RUN`
+lewat namespace build (bridge sendiri, aturan FORWARD sendiri). Jadi "Docker
+Hub jalan" bukan bukti build punya jaringan.
+
+Periksa dulu apakah yang tersaring container pada umumnya atau hanya build:
+
+```bash
+docker run --rm alpine:3.20 apk update      # container biasa
+docker build --no-cache - <<'EOF'           # jalur build
+FROM alpine:3.20
+RUN apk update
+EOF
+```
+
+Tiga jalan keluar, dari yang paling murah:
+
+```bash
+# 1. Cermin lain — paling sering cukup, dl-cdn memang banyak disaring di ID.
+docker compose build --build-arg APK_MIRROR=mirror.leaseweb.com
+
+# 2. Bangun di mesin yang jaringannya sehat, lalu pindahkan image-nya.
+#    Appliance TIDAK perlu bisa membangun apa pun.
+docker compose build                                  # di mesin ber-internet
+docker save freeradius-api-local:1 | gzip > api.tgz   # salin ke mesin golden
+gunzip -c api.tgz | docker load                       # di mesin golden image
+
+# 3. Kalau container umum pun tak punya egress, itu masalah host — bukan repo
+#    ini. Yang biasanya kena: net.ipv4.ip_forward=0, atau firewall yang
+#    memasang FORWARD DROP/REJECT sesudah Docker (ufw/nftables) sehingga
+#    rantai Docker tak lagi dilewati.
+sysctl net.ipv4.ip_forward
+iptables -S FORWARD | head
+```
+
+`APK_MIRROR` juga bisa ditaruh di `.env` supaya tak perlu diketik ulang.
+
 Prosedur lengkap beserta sanitasi dan ekspor OVA ada di
 `backend-super-app/docs/SETUP-RADIUS-LOKAL-MITRA.md`.

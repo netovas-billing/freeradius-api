@@ -51,7 +51,18 @@ services:
     # setiap auth karena gagal konek DB.
 
   api:
-    build: ./api
+    build:
+      context: ./api
+      args:
+        # Cermin Alpine pengganti dl-cdn.alpinelinux.org, untuk jaringan yang
+        # menyaringnya (lihat api/Dockerfile). Kosong = pakai dl-cdn.
+        APK_MIRROR: ${APK_MIRROR:-}
+    # Tidak pernah mencoba Docker Hub untuk nama yang hanya hidup di mesin ini.
+    # Tanpa ini `up` mengawali dengan `Image freeradius-api-local:1 Pulling`
+    # yang pasti gagal, lalu baru membangun — perjalanan sia-sia yang di
+    # appliance tanpa egress registry berarti menggantung sebelum memulai.
+    # Kalau image-nya belum ada, compose TETAP membangun (diuji 13 Okt 2026).
+    pull_policy: never
     # image: DIBERI NAMA supaya firstboot.sh bisa memastikan image-nya memang
     # sudah ada di appliance SEBELUM `up`. Appliance mitra bisa berada di
     # jaringan dengan egress tersaring (terbukti 28 Sep 2026: `apk add` gagal
