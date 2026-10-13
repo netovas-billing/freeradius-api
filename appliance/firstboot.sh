@@ -77,24 +77,25 @@ DB_PASSWORD="$(grep '^DB_PASSWORD=' .env | cut -d= -f2-)"
 
 # ---- 3. Tanam sandi DB ke raddb — HARUS DI SINI ----------------------------
 #
-# setup.sh TIDAK membaca .env sama sekali: ia menulis sandi dari konstanta
-# DB_PASSWORD_DEFAULT, dan sed-nya hanya mencocokkan baris template asli
-# (password = "radpass"). Jadi begitu sandi DB unik dibangkitkan di langkah 2,
-# raddb masih memegang sandi lama dan FreeRADIUS gagal konek DB — auth mati,
-# tanpa satu pun pesan yang menunjuk sebabnya.
-#
-# Komentar di setup.sh menyuruh menjalankan ulang dengan `--force`; skrip itu
-# TIDAK punya parsing argumen sama sekali, jadi flag-nya diabaikan diam-diam.
+# setup.sh dijalankan NOC saat membuat image (A1), jauh sebelum sandi unik
+# instance ini lahir di langkah 2. Jadi raddb yang ikut di dalam OVA memegang
+# sandi image, bukan sandi appliance ini — dan FreeRADIUS gagal konek DB tanpa
+# satu pun pesan yang menunjuk sebabnya. Karena itu penanamannya diulang DI
+# SINI, sesudah sandinya dibangkitkan.
 SQL_CONF="freeradius/raddb/mods-available/sql"
 if [ -f "$SQL_CONF" ]; then
   echo "menanam sandi DB ke $SQL_CONF ..."
-  # Mencocokkan NILAI APA PUN, bukan hanya nilai template: inilah bedanya
-  # dengan setup.sh, dan alasan langkah ini idempoten.
-  sed -i -E 's|^([[:space:]]*)password[[:space:]]*=[[:space:]]*".*"|\1password = "'"${DB_PASSWORD}"'"|' "$SQL_CONF"
+  # Mencocokkan NILAI APA PUN, bukan hanya nilai template — itu yang membuat
+  # langkah ini idempoten. `^#?` ikut WAJIB: di template FreeRADIUS barisnya
+  # BERKOMENTAR dengan `#` di kolom 0 sebelum tab (`#\tpassword = "radpass"`),
+  # jadi pola tanpa `#?` tidak mencocokkan apa pun di raddb yang belum pernah
+  # ditambal. `certificate_password` tidak ikut tercocok karena `password`
+  # harus berada langsung sesudah spasi awal.
+  sed -i -E 's|^#?([[:space:]]*)password[[:space:]]*=[[:space:]]*".*"|\1password = "'"${DB_PASSWORD}"'"|' "$SQL_CONF"
   # DIVERIFIKASI, tidak diasumsikan. Kegagalan sed di sini adalah kegagalan
   # paling mahal di seluruh berkas ini — ia tidak menghasilkan galat, hanya
   # FreeRADIUS yang tak bisa konek DB berjam-jam kemudian.
-  grep -q "password = \"${DB_PASSWORD}\"" "$SQL_CONF" || {
+  grep -qF "password = \"${DB_PASSWORD}\"" "$SQL_CONF" || {
     echo "GAGAL menanam sandi DB ke $SQL_CONF — jangan lanjut, auth akan mati senyap" >&2
     exit 1
   }
