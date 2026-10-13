@@ -66,11 +66,30 @@ EOF
 chmod 600 /etc/ppp/options.l2tpd.client
 
 # Kredensial di chap-secrets, bukan di options: options dibaca semua orang.
+#
+# Berkas ini DITULIS ULANG, tidak ditambahi: appliance hanya punya satu
+# sambungan PPP, dan baris lama dengan username yang sama akan menang tanpa
+# terlihat di mana pun. Tapi di mesin yang BUKAN appliance murni — mis. lab
+# yang dipakai bekerja — berkas yang sama bisa memuat kredensial PPP lain.
+# Disalin sekali sebelum ditimpa; penandanya di baris pertama supaya jalan
+# kedua tidak menimpa salinan itu dengan berkas hasil skrip ini sendiri.
 umask 077
+if [ -s /etc/ppp/chap-secrets ] &&
+   ! grep -q 'dihasilkan radius-vpn-connect' /etc/ppp/chap-secrets &&
+   [ ! -e /etc/ppp/chap-secrets.sebelum-radius ]; then
+  cp -a /etc/ppp/chap-secrets /etc/ppp/chap-secrets.sebelum-radius
+  echo "catatan: chap-secrets lama disalin ke /etc/ppp/chap-secrets.sebelum-radius"
+fi
 cat >/etc/ppp/chap-secrets <<EOF
+# dihasilkan radius-vpn-connect — JANGAN sunting tangan
 # client	server	secret	IP
 "${USER_PPP}"	*	"${PASS_PPP}"	*
 EOF
+# EKSPLISIT, bukan mengandalkan umask di atas: redirect ke berkas yang SUDAH
+# ADA mempertahankan mode lamanya, jadi umask tak berlaku sama sekali di jalur
+# yang justru paling sering terjadi. Diuji: tanpa baris ini, chap-secrets yang
+# tadinya 644 tetap 644 — sandi PPP terbaca semua pengguna mesin.
+chmod 600 /etc/ppp/chap-secrets
 
 # JEBAKAN 2 — berkas di /etc/ppp/ip-up.d/ HANYA dijalankan kalau namanya
 # berakhiran .sh DAN bisa dieksekusi. Tanpa keduanya ia diam saja.
