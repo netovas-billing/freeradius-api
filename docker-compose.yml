@@ -51,12 +51,10 @@ services:
     # setiap auth karena gagal konek DB.
 
   api:
-    build:
-      context: ./api
-      args:
-        # Cermin Alpine pengganti dl-cdn.alpinelinux.org, untuk jaringan yang
-        # menyaringnya (lihat api/Dockerfile). Kosong = pakai dl-cdn.
-        APK_MIRROR: ${APK_MIRROR:-}
+    # api/Dockerfile dibangun TANPA jaringan selain menarik dua base image:
+    # tak ada apk, tak ada go install, tak ada go mod tidy (vendor/ dan docs/
+    # ter-commit). Terbukti dengan `docker build --network=none` 13 Okt 2026.
+    build: ./api
     # Tidak pernah mencoba Docker Hub untuk nama yang hanya hidup di mesin ini.
     # Tanpa ini `up` mengawali dengan `Image freeradius-api-local:1 Pulling`
     # yang pasti gagal, lalu baru membangun — perjalanan sia-sia yang di
