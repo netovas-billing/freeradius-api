@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# radius-vpn-connect <host-concentrator> <username-ppp> <sandi-ppp> <pool-nas>
+#
+# Menyambungkan appliance ini ke VPN concentrator lewat L2TP. Ditulis sekali
+# oleh NOC dan dipanggil dengan empat argumen; TIDAK ada yang menyunting
+# xl2tpd.conf / options / ip-up.d tangan. Jalur manual itu sudah terbukti penuh
+# kegagalan diam, dan tiap jebakannya ditandai di bawah.
+#
+# Biasanya tidak dipanggil langsung: radius-erp-enroll memanggilnya sesudah
+# menanam kredensial REST.
+set -euo pipefail
+
+[ $# -eq 4 ] || {
+  echo "pakai: $0 <host-concentrator> <username-ppp> <sandi-ppp> <pool-nas-cidr>" >&2
+  exit 2
+}
+HOST="$1"; USER_PPP="$2"; PASS_PPP="$3"; POOL_NAS="$4"
+
+command -v xl2tpd >/dev/null || {
+  echo "xl2tpd belum terpasang (NOC: apt install xl2tpd)" >&2
+  exit 1
+}
+
+# JEBAKAN 1 — xl2tpd.conf memakai ';' untuk komentar, BUKAN '#'. Baris ber-'#'
+# dibaca sebagai setelan tak dikenal: xl2tpd tetap start, tunnel tak pernah
+# naik, dan tak ada galat yang menyebut barisnya.
+cat >/etc/xl2tpd/xl2tpd.conf <<EOF
+; dihasilkan radius-vpn-connect — JANGAN sunting tangan
+[global]
+access control = no
+
+[lac concentrator]
+lns = ${HOST}
+require chap = yes
+refuse pap = yes
+require authentication = yes
+pppoptfile = /etc/ppp/options.l2tpd.client
+length bit = yes
+EOF
+
+cat >/etc/ppp/options.l2tpd.client <<EOF
+ipcp-accept-local
+ipcp-accept-remote
+refuse-eap
+require-mschap-v2
+noccp
+noauth
+mtu 1410
+mru 1410
+noipdefault
+usepeerdns
+connect-delay 5000
+name ${USER_PPP}
+# persist + maxfail 0: tunnel naik lagi sendiri sesudah appliance reboot atau
+# jaringan mitra putus. Tanpa ini satu gangguan sesaat berarti RADIUS mati
+# sampai ada yang menyadarinya — dan yang menyadarinya biasanya pelanggan.
+persist
+maxfail 0
+holdoff 10
+EOF
+chmod 600 /etc/ppp/options.l2tpd.client
+
+# Kredensial di chap-secrets, bukan di options: options dibaca semua orang.
+umask 077
+cat >/etc/ppp/chap-secrets <<EOF
+# client	server	secret	IP
+"${USER_PPP}"	*	"${PASS_PPP}"	*
+EOF
+
+# JEBAKAN 2 — berkas di /etc/ppp/ip-up.d/ HANYA dijalankan kalau namanya
+# berakhiran .sh DAN bisa dieksekusi. Tanpa keduanya ia diam saja.
+#
+# JEBAKAN 3 — RUTE BALIK KE POOL NAS. Ini yang paling halus dari semuanya.
+# Profile PPP memberi appliance local-address = GATEWAY POOL NAS (mis.
+# 172.31.199.1), sementara alamat appliance sendiri ada di pool MANAJEMEN (mis.
+# 172.16.0.9) — dua /24 yang berbeda. pppd hanya memasang rute host /32 ke
+# peer-nya, jadi balasan auth ke IP tunnel NAS TIDAK cocok rute mana pun di
+# ppp0: ia jatuh ke default route appliance, keluar ke LAN mitra, dan hilang.
+# FreeRADIUS menerima permintaan, menjawabnya, dan jawabannya tak pernah
+# sampai — di router pelanggan yang terlihat cuma "radius timeout".
+#
+# Ini BERPASANGAN dengan pengecualian masquerade di concentrator. Sebelum
+# pengecualian itu ada, paket NAS di-masquerade jadi gateway pool — yang justru
+# PERSIS alamat peer appliance — sehingga rute balik kebetulan bekerja
+# sementara identitas NAS-nya rusak. Menutup satu sisi saja hanya memindahkan
+# gejalanya. Kalau salah satu sisi kelak diubah, ubah DUA-DUANYA.
+cat >/etc/ppp/ip-up.d/50-radius-route.sh <<EOF
+#!/bin/sh
+# dihasilkan radius-vpn-connect — JANGAN sunting tangan
+# \$1 = nama interface ppp yang baru naik
+# replace (bukan add): idempoten, jadi tunnel yang naik-turun berkali-kali
+# tidak menumpuk rute maupun gagal dengan "File exists".
+ip route replace ${POOL_NAS} dev "\$1"
+echo "\$(date -Is) ppp up: iface=\$1 local=\$4 remote=\$5 rute=${POOL_NAS}" \\
+  >>/var/log/radius-vpn.log
+EOF
+chmod +x /etc/ppp/ip-up.d/50-radius-route.sh
+
+systemctl enable --now xl2tpd
+sleep 2
+echo "c concentrator" >/var/run/xl2tpd/l2tp-control
+
+echo -n "menunggu tunnel naik"
+for _ in $(seq 1 30); do
+  if ip -4 -o addr show 2>/dev/null | grep -qE ' (ppp|l2tp)'; then
+    echo
+    ip -4 -o addr show | grep -E ' (ppp|l2tp)'
+    echo "OK — tunnel naik."
+    echo "Cocokkan alamat di atas dengan 'Alamat di dalam tunnel' di layar ERP."
+    exit 0
+  fi
+  echo -n "."
+  sleep 2
+done
+
+echo
+echo "GAGAL: tunnel tidak naik dalam 60 detik." >&2
+echo "Periksa: appliance bisa internet keluar? host concentrator benar?" >&2
+echo "Log: journalctl -u xl2tpd -n 50" >&2
+exit 1

@@ -1,0 +1,27 @@
+[Unit]
+Description=Appliance RADIUS — boot pertama (kredensial unik per mitra)
+# Docker WAJIB sudah siap: firstboot menjalankan `docker compose up -d`, dan
+# tanpa After= ia berlomba dengan dockerd lalu gagal dengan "cannot connect to
+# the Docker daemon" — di boot PERTAMA, satu-satunya yang menentukan.
+After=docker.service network-online.target
+Wants=docker.service network-online.target
+# Sentinel-nya juga diperiksa di dalam skrip. Dua lapis dengan sengaja:
+# ConditionPathExists membuat unit ini tidak dijalankan lagi sama sekali,
+# sementara pemeriksaan di skrip melindungi pemanggilan manual.
+ConditionPathExists=!/var/lib/radius-appliance/firstboot-selesai
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/firstboot.sh
+# ProtectSystem/ProtectHome TIDAK dipakai. Skrip ini menulis ke /etc/ssh,
+# /etc/issue, dan direktori stack — sandbox systemd membuat tulisan itu gagal
+# dengan "Read-only file system" dari dalam unit sementara perintah yang sama
+# berhasil kalau dijalankan tangan, dan itu salah satu jebakan paling
+# membingungkan di pemasangan Debian.
+StandardOutput=journal+console
+StandardError=journal+console
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

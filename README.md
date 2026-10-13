@@ -107,11 +107,39 @@ FreeRADIUS mengenal beberapa nama attribute password tergantung versi:
 API menerima nama attribute apa pun di field `password_attr`; pastikan
 nama itu cocok dengan apa yang dipakai FreeRADIUS di module SQL Anda.
 
+## Dua cara repo ini dipakai
+
+| | instance NOC | appliance mitra |
+|---|---|---|
+| dikelola | `radius-manager-api` | sendiri, di Proxmox mitra |
+| dipakai dari repo ini | biner `api/freeradius-api` + `autoclearzombie.sh` + `autobackups3.sh` | seluruh stack Docker Compose |
+| `.env` | ditulis manager (`renderAPIEnvFile`, pakai alias `SWAGGER_*`) | `appliance/firstboot.sh` + `radius-erp-enroll` |
+| `setup.sh` / `docker-compose.yml` / `initdb/` | **tidak dipakai** | dipakai |
+
+Pemisahan itu disengaja: perubahan pada `setup.sh`, compose, `initdb/`, atau
+`appliance/` **tidak bisa** mengganggu instance NOC yang sedang berjalan —
+manager tak pernah membacanya. Satu-satunya berkas bersama selain biner adalah
+dua skrip pemeliharaan, yang ditambal manager lewat pencocokan `^KEY=` di kolom
+0; jangan indentasi atau mengganti nama kuncinya.
+
+Prosedur appliance lengkap: **`appliance/README.md`**.
+
 ## Production notes
 
 - Ganti semua secret di `.env`. Jangan commit `.env` ke git.
-- Hapus user `bob` test (atau hapus `initdb/02-test-user.sql` sebelum DB pertama dibuat).
+- `FR_TAG` memaku versi image FreeRADIUS. SATU sumber untuk `docker-compose.yml`
+  dan `setup.sh` — `raddb/` disalin dari image itu, jadi dua tempat yang
+  menyebut versi berbeda berarti server berjalan dengan config yang bukan
+  miliknya.
+- `initdb/02-test-user.sql.optional` TIDAK dijalankan entrypoint MariaDB
+  (hanya `.sh`/`.sql`/`.sql.gz`/`.sql.xz`/`.sql.zst`). Dulu namanya `.sql` dan
+  ter-commit, sehingga setiap appliance lahir dengan `bob`/`hello` yang bisa
+  login. Butuh untuk uji nyala? Salin jadi `.sql` sebelum DB pertama dibuat,
+  lalu hapus lagi.
 - Service `db` tidak punya `ports:` — hanya bisa diakses lewat network internal Docker.
 - API service expose port `8000` ke host. Untuk akses dari luar VM, taruh di belakang reverse proxy + TLS (Caddy / nginx) dan rate-limit.
-- Setelah FreeRADIUS stabil, hapus `command: ["-X"]` di compose supaya tidak run debug mode.
+- FreeRADIUS berjalan `radiusd -f` (foreground), **bukan** `-X`. Mode `-X`
+  mencatat tiap paket dalam bentuk penuh; di appliance yang jalan sendiri
+  berbulan-bulan itu mengisi disk mitra, dan tak ada yang akan mengubahnya di
+  mesin yang tak pernah dilihat siapa pun.
 - Backup DB rutin: `docker compose exec db sh -c 'mariadb-dump -uradius -p"$MARIADB_PASSWORD" radius' > backup-$(date +%F).sql`.

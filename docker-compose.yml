@@ -18,7 +18,12 @@ services:
       retries: 10
 
   freeradius:
-    image: freeradius/freeradius-server:latest
+    # Tag DIPAKU, tidak `latest`. raddb/ disalin dari image ini oleh setup.sh;
+    # kalau tag-nya bergerak dan container dibuat ulang, server berjalan dengan
+    # versi berbeda dari config yang disalin untuknya. Di appliance mitra yang
+    # tak pernah disentuh berbulan-bulan, itu bom waktu tanpa gejala awal.
+    # Satu sumber: FR_TAG di .env (setup.sh memakai nilai yang sama).
+    image: freeradius/freeradius-server:${FR_TAG:-3.2.10}
     container_name: freeradius
     restart: unless-stopped
     depends_on:
@@ -29,10 +34,32 @@ services:
       - "1813:1813/udp"
     volumes:
       - ./freeradius/raddb:/etc/raddb:ro
-    command: ["-X"]
+    # `radiusd -f` — foreground, BUKAN `-X`.
+    #
+    # `-X` adalah mode debug: log tiap paket dalam bentuk penuh. Di appliance
+    # yang berjalan sendiri berbulan-bulan itu berarti disk mitra terisi log
+    # sampai penuh, dan README menyuruh menggantinya "setelah stabil" — tak ada
+    # yang akan melakukannya di mesin yang tak pernah dilihat siapa pun.
+    #
+    # Ditulis eksplisit, bukan dihapus supaya jatuh ke CMD bawaan image:
+    # bawaan itu milik upstream dan bisa berubah di versi berikutnya.
+    command: ["radiusd", "-f"]
+    # Tidak ada healthcheck di sini DENGAN SENGAJA. Satu-satunya probe yang
+    # jujur untuk FreeRADIUS adalah paket RADIUS sungguhan (Status-Server), dan
+    # itu harus dinyalakan dulu di raddb. Probe palsu — mis. memeriksa proses
+    # masih hidup — justru membuat container tampak sehat saat ia sudah menolak
+    # setiap auth karena gagal konek DB.
 
   api:
     build: ./api
+    # image: DIBERI NAMA supaya firstboot.sh bisa memastikan image-nya memang
+    # sudah ada di appliance SEBELUM `up`. Appliance mitra bisa berada di
+    # jaringan dengan egress tersaring (terbukti 28 Sep 2026: `apk add` gagal
+    # ke dl-cdn.alpinelinux.org meski Docker Hub jalan), jadi `up` yang
+    # diam-diam mencoba membangun ulang akan menggantung tanpa penjelasan.
+    # Nama hasil build compose bergantung nama direktori proyek — terlalu
+    # rapuh untuk dijadikan patokan pemeriksaan.
+    image: freeradius-api-local:1
     container_name: freeradius-api
     restart: unless-stopped
     depends_on:

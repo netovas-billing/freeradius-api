@@ -1,0 +1,20 @@
+-- OPT-IN. Berkas ini SENGAJA berakhiran .optional supaya entrypoint MariaDB
+-- TIDAK menjalankannya (ia hanya mengeksekusi .sh/.sql/.sql.gz/.sql.xz/.sql.zst).
+--
+-- KENAPA. Sebelum 13 Okt 2026 namanya `02-test-user.sql` dan ia TER-COMMIT,
+-- jadi setiap appliance mitra lahir dengan `bob`/`hello` yang BISA LOGIN.
+-- initdb hanya jalan saat volume DB kosong — yaitu persis boot pertama sesudah
+-- sanitasi image — sehingga seluruh mitra kembar memegang kredensial yang sama.
+-- README menyuruh menghapusnya sebelum produksi; tak ada yang akan melakukannya
+-- di mesin yang tak pernah dilihat siapa pun.
+--
+-- Mau memakainya untuk uji nyala di lab? Salin sebelum DB pertama dibuat:
+--   cp initdb/02-test-user.sql.optional initdb/02-test-user.sql
+-- lalu HAPUS lagi sebelum sanitasi (langkah A3).
+-- User test untuk verifikasi instalasi.
+-- HAPUS / ganti sebelum production.
+INSERT INTO radcheck (username, attribute, op, value)
+VALUES ('bob', 'Cleartext-Password', ':=', 'hello');
+
+INSERT INTO radreply (username, attribute, op, value)
+VALUES ('bob', 'Reply-Message', ':=', 'Hello from SQL');

@@ -6,16 +6,53 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-IMAGE="freeradius/freeradius-server:latest"
+# Tag dibaca dari .env (FR_TAG) dengan bawaan yang SAMA seperti
+# docker-compose.yml. raddb/ disalin dari image ini, jadi kalau dua tempat
+# menyebut versi berbeda, server berjalan dengan config yang bukan miliknya.
 TMP="fr-bootstrap-$$"
 
 SRC_CONFIG="/etc/freeradius"
 SRC_SCHEMA="/etc/freeradius/mods-config/sql/main/mysql/schema.sql"
 
-# DB credential default (sinkron dengan docker-compose.yml).
-# Kalau ubah DB_PASSWORD di .env, jalankan setup.sh ulang dengan flag --force
-# atau edit manual baris `password = ...` di mods-available/sql.
-DB_PASSWORD_DEFAULT="radiuspass_ganti"
+# ---- 0. Muat .env kalau ada -------------------------------------------------
+#
+# Sampai 13 Okt 2026 berkas ini TIDAK PERNAH membaca .env: sandi DB ditulis ke
+# raddb dari konstanta, dan sed-nya hanya mencocokkan baris template asli
+# (`password = "radpass"`). Akibatnya begitu DB_PASSWORD di .env diganti —
+# dan di appliance mitra ia WAJIB diganti, kalau tidak semua mitra kembar —
+# raddb tetap memegang sandi lama dan FreeRADIUS gagal konek DB. Auth mati,
+# tanpa satu pun pesan yang menunjuk sebabnya.
+#
+# Komentar lama di sini menyuruh menjalankan ulang dengan `--force`. Skrip ini
+# TIDAK punya parsing argumen sama sekali, jadi flag itu diabaikan diam-diam —
+# instruksi yang salah, di dalam repo sendiri.
+#
+# Hanya baris ber-^KEY=VALUE yang diambil: `set -a; . .env` membajak variabel
+# lain di skrip ini (pernah terjadi di radius-manager: PORT_REGISTRY dan
+# DB_HOST ikut tertimpa).
+muatEnv() {
+  [ -f .env ] || return 0
+  local baris kunci nilai
+  while IFS= read -r baris; do
+    case "$baris" in
+      FR_TAG=*|DB_PASSWORD=*)
+        kunci="${baris%%=*}"; nilai="${baris#*=}"
+        # `if`, bukan `[ … ] && …`: di bawah `set -e` bentuk kedua membuat
+        # skrip KELUAR begitu ada baris berkunci cocok tapi nilainya kosong
+        # (mis. `DB_PASSWORD=` di .env yang belum di-enroll) — dan keluarnya
+        # tanpa pesan, dengan status 1, di tengah bootstrap.
+        if [ -n "$nilai" ]; then
+          eval "$kunci=\$nilai"
+        fi
+        ;;
+    esac
+  done < .env
+}
+muatEnv
+
+FR_TAG="${FR_TAG:-3.2.10}"
+IMAGE="freeradius/freeradius-server:${FR_TAG}"
+DB_PASSWORD="${DB_PASSWORD:-radiuspass_ganti}"
 
 # ---- Cleanup symlink dangling dari run gagal ----
 if [ -L freeradius/raddb ] && [ ! -e freeradius/raddb ]; then
@@ -71,8 +108,20 @@ if [ -f "$SQL_CONF" ]; then
     -e 's|^#\?\s*server\s*=\s*"localhost"|	server = "db"|' \
     -e 's|^#\?\s*port\s*=\s*3306|	port = 3306|' \
     -e 's|^#\?\s*login\s*=\s*"radius"|	login = "radius"|' \
-    -e 's|^#\?\s*password\s*=\s*"radpass"|	password = "'"$DB_PASSWORD_DEFAULT"'"|' \
     "$SQL_CONF"
+
+  # Sandi: cocokkan NILAI APA PUN, bukan hanya nilai template. Itu yang
+  # membuat langkah ini idempoten DAN benar saat .env sudah diganti.
+  sed -i -E 's|^([[:space:]]*)password[[:space:]]*=[[:space:]]*".*"|\1password = "'"$DB_PASSWORD"'"|' \
+    "$SQL_CONF"
+
+  # DIVERIFIKASI, tidak diasumsikan. Kegagalan sed di sini adalah kegagalan
+  # paling mahal di seluruh berkas: ia tidak menghasilkan galat, hanya
+  # FreeRADIUS yang tak bisa konek DB berjam-jam kemudian.
+  grep -q "password = \"$DB_PASSWORD\"" "$SQL_CONF" || {
+    echo "GAGAL menanam sandi DB ke $SQL_CONF — berhenti, auth akan mati senyap" >&2
+    exit 1
+  }
 
   # Comment-out TLS block di dalam mysql {...} — koneksi internal Docker
   if grep -q '^		tls {$' "$SQL_CONF"; then
@@ -132,16 +181,22 @@ Yang otomatis diaplikasikan:
   - TLS block ke DB di-comment (koneksi internal Docker)
   - sites-enabled/dynamic-clients aktif (overlay dari freeradius/overlay/)
   - clients.conf: tambah blok `client dynamic` (0.0.0.0/0 — narrow di prod!)
+  - sandi DB dari .env DITANAM ke mods-available/sql, lalu DIVERIFIKASI
   - .env dengan API_KEY random 32-byte
 
 Sebelum jalan:
   - Periksa freeradius/raddb/clients.conf — ganti subnet `client dynamic`
     dari 0.0.0.0/0 ke range mitra Anda (mis. VPN tunnel) untuk production.
-  - Kalau ubah DB_PASSWORD di .env, edit juga password di
-    freeradius/raddb/mods-available/sql.
+  - Ubah DB_PASSWORD di .env lalu jalankan ULANG berkas ini; sandinya
+    ditanam ke raddb dari .env, bukan dari konstanta, dan hasilnya diperiksa.
+    (Sampai 13 Okt 2026 itu TIDAK terjadi: raddb memegang sandi lama dan
+    FreeRADIUS gagal konek DB tanpa pesan yang menunjuk sebabnya.)
 
 Lanjut:
   docker compose up -d
   docker compose logs -f freeradius
   # API: http://localhost:8000/docs/index.html
+
+Membuat APPLIANCE untuk mitra (bukan instance NOC)? Lihat appliance/README.md —
+jangan jalankan firstboot.sh di lab, tandanya ikut ke dalam OVA.
 EOF
