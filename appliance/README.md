@@ -23,7 +23,7 @@ yang sedang berjalan.
 ## Yang dijalankan mitra: SATU baris
 
 ```
-radius-erp-enroll <host-conc> <user-ppp> <sandi-ppp> <pool-nas> <api-user> <api-key>
+radius-erp-enroll <host-conc> <user-ppp> <sandi-ppp> <pool-nas> <api-user> <api-key> <port-api>
 ```
 
 Barisnya **disalin utuh** dari panel "Sambungkan appliance" di ERP — tidak
@@ -58,7 +58,7 @@ cd ~/freeradius-api
 ./setup.sh && docker compose up -d          # .env lahir dari sini, bukan firstboot
 sudo apt install -y xl2tpd curl             # radius-vpn-connect butuh keduanya
 sudo STACK_DIR="$PWD" ./appliance/radius-erp-enroll \
-  <host-conc> <user-ppp> <sandi-ppp> <pool-nas> erp <api-key>
+  <host-conc> <user-ppp> <sandi-ppp> <pool-nas> erp <api-key> <port-api>
 ```
 
 `radius-vpn-connect` dicari di sebelah skripnya dulu, baru PATH — jadi

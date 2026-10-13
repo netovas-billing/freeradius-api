@@ -78,7 +78,16 @@ services:
       RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
       WEBHOOK_POLL_SECONDS: ${WEBHOOK_POLL_SECONDS:-5}
     ports:
-      - "8000:8000"
+      # Port TERBIT dari API_PORT, container tetap 8000.
+      #
+      # dst-nat di concentrator 1:1 TANPA to-ports — URL tiap instance RADIUS
+      # Manager memuat nomor portnya sendiri dan tersimpan di database, jadi
+      # penulisan ulang port di router akan memutus SEMUA instance NOC. Yang
+      # menyesuaikan diri karena itu appliance: radius-erp-enroll menanam
+      # API_PORT = port dst-nat yang dialokasikan ERP. Tanpa ini paket mendarat
+      # di 15xxx sementara yang mendengarkan 8000 — dst-nat benar, firewall
+      # benar, tunnel naik, dan tak ada yang menjawab.
+      - "${API_PORT:-8000}:8000"
 
 volumes:
   radius_db:

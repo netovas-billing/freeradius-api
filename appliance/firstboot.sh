@@ -63,6 +63,11 @@ API_KEY=
 BASIC_AUTH_USER=
 BASIC_AUTH_PASSWORD=
 
+# Port terbit API. Ditulis 8000 EKSPLISIT, tidak dikosongkan: compose membaca
+# `${API_PORT:-8000}` dan nilai kosong berarti port host ACAK, bukan bawaan.
+# radius-erp-enroll menggantinya dengan port dst-nat milik baris ERP.
+API_PORT=8000
+
 FR_TAG=3.2.10
 
 RATE_LIMIT_MAX=120

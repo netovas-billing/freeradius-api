@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# radius-erp-enroll <host-conc> <user-ppp> <sandi-ppp> <pool-nas> <api-user> <api-key>
+# radius-erp-enroll <host-conc> <user-ppp> <sandi-ppp> <pool-nas> <api-user> <api-key> <port-api>
 #
 # SATU perintah yang menyambungkan appliance ini ke ERP. Inilah satu-satunya
 # hal yang dijalankan mitra, dan satu-satunya yang berpindah manual dalam
@@ -18,9 +18,9 @@
 # antara boot pertama dan enroll.
 set -euo pipefail
 
-[ $# -eq 6 ] || {
+[ $# -eq 7 ] || {
   cat >&2 <<'USAGE'
-pakai: radius-erp-enroll <host-conc> <user-ppp> <sandi-ppp> <pool-nas> <api-user> <api-key>
+pakai: radius-erp-enroll <host-conc> <user-ppp> <sandi-ppp> <pool-nas> <api-user> <api-key> <port-api>
 
 Jangan dirangkai tangan. Salin barisnya UTUH dari layar ERP
 (Infrastruktur > RADIUS > Tambah, panel "Sambungkan appliance").
@@ -31,7 +31,14 @@ USAGE
 }
 
 HOST="$1"; USER_PPP="$2"; PASS_PPP="$3"; POOL_NAS="$4"
-API_USER="$5"; API_KEY="$6"
+API_USER="$5"; API_KEY="$6"; PORT_API="$7"
+
+case "$PORT_API" in
+  ''|*[!0-9]*) echo "GAGAL: port API \"$PORT_API\" bukan angka." >&2; exit 2 ;;
+esac
+[ "$PORT_API" -ge 1 ] && [ "$PORT_API" -le 65535 ] || {
+  echo "GAGAL: port API $PORT_API di luar 1-65535." >&2; exit 2
+}
 
 # Konvensi sama dengan install-appliance.sh. Tanpa ini kegagalannya muncul di
 # tengah jalan — sesudah .env ditambal — sebagai "Permission denied" pada
@@ -74,6 +81,13 @@ tambal() {
 echo "menanam kredensial REST ..."
 tambal BASIC_AUTH_USER "$API_USER"
 tambal BASIC_AUTH_PASSWORD "$API_KEY"
+# PORT, bukan hanya kredensial. dst-nat di concentrator 1:1 TANPA to-ports
+# (URL tiap instance NOC memuat nomor portnya sendiri dan tersimpan di
+# database — menulis ulang port di router memutus 24 instance produksi), jadi
+# paket mendarat di appliance pada port dst-nat. Appliance yang mendengarkan
+# 8000 tak menjawab apa pun: dst-nat benar, firewall benar, tunnel naik, dan
+# "URL-nya tidak bisa dibuka" tanpa satu pun galat di router maupun di sini.
+tambal API_PORT "$PORT_API"
 # API_KEY env dibiarkan KOSONG dengan sengaja: ERP hanya memakai Basic auth
 # (internal/pkg/radiusclient — tidak ada dukungan X-API-Key sama sekali), dan
 # kunci kedua yang tak dipakai siapa pun hanya memperbesar permukaan.
@@ -90,8 +104,11 @@ echo "memuat ulang API ..."
 # "ERP tak bisa sinkron" yang terlihat seperti masalah jaringan.
 echo -n "memastikan kredensial berlaku"
 for _ in $(seq 1 15); do
+  # Diuji pada PORT TERBITnya, bukan 8000: yang harus terbukti adalah port
+  # yang benar-benar dituju dst-nat. Menguji 8000 akan tetap hijau pada
+  # appliance yang portnya salah — persis kegagalan yang hendak ditutup.
   kode="$(curl -so /dev/null -w '%{http_code}' -m 3 \
-    -u "${API_USER}:${API_KEY}" http://127.0.0.1:8000/api/v1/nas/ || true)"
+    -u "${API_USER}:${API_KEY}" "http://127.0.0.1:${PORT_API}/api/v1/nas/" || true)"
   if [ "$kode" = "200" ]; then
     echo " OK"
     break
