@@ -16,21 +16,88 @@ NAS/AP/Router  --1812/1813 UDP-->  freeradius
 - `db` — MariaDB, data di named volume `freeradius_mariadb_data`.
 - `api` — REST API, akses DB via network internal Docker.
 
-## Quickstart
+## Uji coba di lokal (lab)
+
+Ini jalur untuk **menyalakan dan mencoba**, bukan untuk membuat OVA mitra.
+Golden image punya urutannya sendiri di `appliance/README.md`, dan
+`appliance/firstboot.sh` JANGAN dijalankan di sini.
 
 ```bash
-./setup.sh                # bootstrap raddb + schema + .env
-# (edit freeradius/raddb/mods-available/sql, sites-available/default,
-#  clients.conf seperti instruksi di akhir setup.sh)
+./setup.sh          # bootstrap raddb + schema + .env (API_KEY acak)
 docker compose up -d
-docker compose logs -f freeradius
+docker compose ps   # db healthy, freeradius & api up
 ```
 
-Test RADIUS dari dalam container:
+`setup.sh` aman dijalankan berulang. Yang perlu diketahui tentang `.env`:
+ia DIBUAT di akhir `setup.sh`, jadi pada jalan pertama sandi DB yang ditanam
+ke raddb adalah bawaan `.env.example`. Mau menggantinya? Ganti **sebelum** DB
+pertama lahir, atau buang volumenya — MariaDB hanya memakai
+`MARIADB_PASSWORD` saat volume masih kosong, jadi mengganti sandi di `.env`
+pada DB yang sudah ada menghasilkan FreeRADIUS dan api yang gagal konek tanpa
+sebab yang kelihatan:
 
 ```bash
-docker compose exec freeradius radtest bob hello 127.0.0.1 0 testing123
+docker compose down -v        # HAPUS data DB — hanya di lab
+vim .env                      # DB_PASSWORD / DB_ROOT_PASSWORD
+./setup.sh && docker compose up -d
 ```
+
+### 1. API hidup?
+
+```bash
+curl -s localhost:8000/health
+KEY=$(grep '^API_KEY=' .env | cut -d= -f2-)
+curl -s -H "X-API-Key: $KEY" localhost:8000/api/users
+```
+
+Swagger UI: <http://localhost:8000/docs/index.html>. Kalau semua panggilan
+`/api` dijawab 401, periksa `API_KEY` di `.env` TIDAK kosong — kosong berarti
+X-API-Key dimatikan dengan sengaja (gagal-tertutup; lihat `appliance/`).
+
+### 2. Buat user uji lewat API
+
+Tidak ada user bawaan: `initdb/02-test-user.sql.optional` sengaja tidak
+dijalankan entrypoint MariaDB, supaya tiap appliance tidak lahir dengan
+`bob`/`hello` yang sama. Buat lewat API saja — lebih mirip pemakaian nyata:
+
+```bash
+curl -s -X POST localhost:8000/api/users \
+  -H "X-API-Key: $KEY" -H 'Content-Type: application/json' \
+  -d '{"username":"bob","password":"hello","password_attr":"Cleartext-Password"}'
+```
+
+### 3. Uji auth RADIUS dari dalam container
+
+`client localhost` (127.0.0.1, secret `testing123`) sudah ada di `clients.conf`
+bawaan, jadi dari dalam container tak perlu mendaftarkan NAS:
+
+```bash
+docker compose exec freeradius sh -c \
+  'echo "User-Name=bob,User-Password=hello" | radclient -x 127.0.0.1:1812 auth testing123'
+```
+
+`Received Access-Accept` = rantai API → MariaDB → FreeRADIUS utuh.
+`Access-Reject` dengan log `rlm_sql: Could not connect` = sandi DB di raddb
+tidak sama dengan yang dipakai DB (lihat catatan `.env` di atas).
+
+### 4. Uji dari NAS/router sungguhan
+
+Port 1812/1813 dipublikasikan ke host, jadi router bisa menembaknya langsung —
+tapi **IP yang dilihat FreeRADIUS bukan IP router**, melainkan IP sumber
+sesudah melewati bridge Docker. Itu yang harus didaftarkan, dan cara paling
+jujur membacanya adalah dari log-nya sendiri:
+
+```bash
+docker compose logs -f freeradius     # "Ignoring request ... from unknown client <IP>"
+curl -s -X POST localhost:8000/api/nas \
+  -H "X-API-Key: $KEY" -H 'Content-Type: application/json' \
+  -d '{"nasname":"<IP itu>","shortname":"lab","secret":"testing123","type":"other"}'
+```
+
+Tanpa restart: NAS yang baru masuk tabel `nas` dipakai pada paket berikutnya
+lewat virtual server `dynamic_clients`. (Instance NOC di bawah
+freeradius-manager BERBEDA — di sana NAS baru memang menuntut restart, karena
+kliennya terdaftar statis per-socket.)
 
 ## API
 
