@@ -185,7 +185,7 @@ cd /opt/freeradius-api
 ./setup.sh                        # bootstrap raddb dari image FreeRADIUS
 docker compose build              # image api DIBANGUN SEKARANG
 docker compose pull db freeradius  # image dasar ikut ter-cache
-apt install -y xl2tpd curl openssl
+apt install -y xl2tpd curl openssl qemu-guest-agent
 ./appliance/install-appliance.sh
 ```
 

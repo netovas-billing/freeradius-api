@@ -84,6 +84,27 @@ else
   echo "Mitra hanya punya noVNC, dan di sana baris enroll TIDAK bisa ditempel." >&2
 fi
 
+# ---- Paket yang harus ikut di image ---------------------------------------
+#
+# Diperiksa di sini, bukan diandalkan dari ingatan: ketiadaannya tidak terasa
+# di NOC sama sekali — ia muncul di tempat mitra, berbulan-bulan kemudian.
+#
+# qemu-guest-agent WAJIB ikut kalau mitra diminta mencentang "QEMU Guest Agent"
+# di Options VM. Centang tanpa paketnya bukan sekadar tak berguna: Proxmox
+# menunggu agent yang tak pernah menjawab, sehingga Shutdown dari UI menggantung
+# sampai timeout dan snapshot/backup ber-fsfreeze gagal. Dengan paketnya, mitra
+# dapat alamat IP VM tampil di ringkasan Proxmox — justru nilai yang ia butuhkan
+# saat mendaftarkan appliance.
+kurang=""
+for paket in xl2tpd curl openssl qemu-guest-agent; do
+  command -v "$paket" >/dev/null 2>&1 || dpkg -s "$paket" >/dev/null 2>&1 || kurang="$kurang $paket"
+done
+if [ -n "$kurang" ]; then
+  echo "PERINGATAN: paket belum terpasang:$kurang" >&2
+  echo "  apt install -y$kurang" >&2
+  echo "Tanpa qemu-guest-agent, JANGAN suruh mitra mencentang QEMU Guest Agent." >&2
+fi
+
 systemctl daemon-reload
 systemctl enable radius-appliance-firstboot.service
 # TIMER-nya yang di-enable, bukan servicenya: meng-enable unit oneshot membuat
@@ -107,7 +128,9 @@ Sisa langkah A1 sebelum sanitasi:
   2. docker compose build                 # image api DIBANGUN SEKARANG — mitra
                                           # bisa saja tanpa egress ke registry
   3. docker compose pull db freeradius    # image dasar ikut ter-cache
-  4. apt install -y xl2tpd curl openssl   # radius-vpn-connect bergantung padanya
+  4. apt install -y xl2tpd curl openssl qemu-guest-agent
+                                          # xl2tpd/curl/openssl: radius-vpn-connect
+                                          # qemu-guest-agent: Proxmox mitra butuhnya
 
 JANGAN jalankan firstboot.sh di lab: ia menandai dirinya selesai, dan tanda itu
 ikut ke dalam OVA sehingga appliance mitra lahir TANPA kredensial unik.
