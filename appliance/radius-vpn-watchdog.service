@@ -1,0 +1,16 @@
+[Unit]
+Description=Appliance RADIUS — pastikan tunnel L2TP ke concentrator hidup
+# Urutan saja, bukan jaminan kesiapan: After= tidak menunggu xl2tpd membuat
+# FIFO kontrolnya. Skripnya menunggu sendiri dan menguji FIFO dengan -p.
+After=xl2tpd.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/radius-vpn-watchdog
+# ProtectSystem/ProtectHome TIDAK dipakai: skripnya menulis
+# /var/log/radius-vpn.log dan bicara ke systemd. Sandbox membuat keduanya gagal
+# dari dalam unit sementara perintah yang sama berhasil kalau diketik tangan —
+# jebakan yang sudah memakan waktu sekali di appliance ini.
+StandardOutput=journal
+StandardError=journal

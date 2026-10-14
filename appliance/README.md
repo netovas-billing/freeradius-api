@@ -19,6 +19,8 @@ yang sedang berjalan.
 | `radius-appliance-firstboot.service` | systemd | — |
 | `radius-erp-enroll` | **mitra** | sekali, satu baris dari layar ERP |
 | `radius-vpn-connect` | `radius-erp-enroll` | dipanggil, bukan diketik |
+| `radius-vpn-watchdog` | `radius-vpn-watchdog.timer` | tiap menit, diam kalau tunnel sehat |
+| `radius-vpn-watchdog.{service,timer}` | systemd | — |
 
 ## Yang dijalankan mitra: SATU baris
 
@@ -86,6 +88,60 @@ punya gejala apa pun: semuanya menyala normal, dan baru terasa saat satu mitra
 bisa membaca RADIUS mitra lain.
 
 Sanitasi (langkah A3) harus membuang **keduanya**: tanda itu dan `.env`.
+
+## Sesudah reboot, tunnel naik lagi sendiri — tiga lapis
+
+Appliance duduk di lokasi mitra tanpa penjaga, jadi satu kedipan listrik tidak
+boleh berarti RADIUS mati sampai ada yang datang mengetik ulang. Yang
+memulihkan ada tiga, dan ketiganya menutup kasus yang berbeda:
+
+| lapis | menutup | di mana |
+|---|---|---|
+| `autodial = yes` | appliance reboot | `[lac concentrator]` di `/etc/xl2tpd/xl2tpd.conf` |
+| `redial = yes` + `redial timeout` | sesi putus sesudah sempat naik | sda. |
+| `radius-vpn-watchdog.timer` | dial pertama gagal (router mitra belum siap), `max redials` habis, xl2tpd mati | unit systemd, tiap menit |
+
+Sampai 14 Okt 2026 **tak satu pun dari ketiganya ada**, dan yang membuatnya
+sulit terlihat: komentar di `radius-vpn-connect` menjanjikan sebaliknya —
+`persist` + `maxfail 0` disebut membuat tunnel "naik lagi sendiri sesudah
+appliance reboot". Keduanya tidak bisa melakukan itu. pppd bukan proses
+mandiri di sini: ia **anak** xl2tpd di atas pty, dijalankan per-call dan
+di-`TERM` saat call dibongkar. `persist` adalah keadaan satu proses pppd, dan
+reboot membunuh prosesnya. Memulai sesi L2TP baru adalah tugas xl2tpd, dan
+tanpa `autodial` xl2tpd start, membaca LAC, membuat FIFO kontrolnya, lalu
+diam.
+
+`max redials` ditulis **eksplisit** (32767), bukan `0`: man page xl2tpd tidak
+menyebut nilai bawaannya, dan membaca `0` sebagai "tak terhingga" adalah
+tebakan yang bisa berarti kebalikannya.
+
+Watchdog-nya sengaja bodoh — kalau tidak ada alamat di `ppp`/`l2tp` dan tidak
+ada `pppd` yang sedang bernegosiasi, ia mengirim `c concentrator`. Itu saja.
+Ia **diam** selama `/etc/xl2tpd/xl2tpd.conf` belum memuat LAC hasil
+`radius-vpn-connect`, jadi aman menyala di golden image yang belum di-enroll,
+dan appliance yang sehat tidak menulis satu baris pun ke
+`/var/log/radius-vpn.log`.
+
+### Membuktikannya di lab
+
+```bash
+reboot                                    # lalu TANPA mengetik apa pun:
+ip -4 -o addr show | grep -E ' (ppp|l2tp)'   # alamat tunnel harus muncul lagi
+tail /var/log/radius-vpn.log                 # baris "ppp up: …" baru
+ip route get <IP di pool NAS>                # harus lewat ppp0
+```
+
+Uji yang kedua lebih penting daripada yang pertama: **matikan concentrator**,
+reboot appliance, baru hidupkan concentrator lima menit kemudian. Tunnel harus
+naik sendiri — itu yang membuktikan lapis ketiga, dan itu pula bentuk kegagalan
+yang paling mungkin terjadi sungguhan (listrik mitra pulih sebelum uplink-nya).
+
+> **Appliance yang SUDAH terkirim tidak ikut diperbaiki sendiri.** Ia memegang
+> `xl2tpd.conf` tanpa `autodial` dan tidak punya unit watchdog. Perbaikannya:
+> `git pull` di `/opt/freeradius-api`, jalankan `./appliance/install-appliance.sh`,
+> lalu jalankan ulang `radius-vpn-connect` dengan empat argumen yang sama
+> (sandi PPP-nya hanya tampil sekali di ERP — kalau sudah hilang, daftarkan
+> ulang dari ERP).
 
 ## Urutan di golden image (A1)
 

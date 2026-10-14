@@ -1,0 +1,14 @@
+[Unit]
+Description=Periksa tunnel L2TP appliance tiap menit
+
+[Timer]
+# OnBootSec cukup longgar supaya xl2tpd sempat start dan autodial sempat
+# selesai — watchdog yang mendahului autodial hanya menghasilkan panggilan
+# kedua, bukan pemulihan lebih cepat.
+OnBootSec=90s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=radius-vpn-watchdog.service
+
+[Install]
+WantedBy=timers.target

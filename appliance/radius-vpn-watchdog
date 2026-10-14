@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# radius-vpn-watchdog — jaring terakhir supaya appliance tidak pernah duduk
+# tanpa tunnel tanpa ada yang tahu. Dipanggil radius-vpn-watchdog.timer.
+#
+# Kenapa ada, padahal xl2tpd.conf sudah punya `autodial` + `redial`:
+#
+#   1. `autodial` mendial saat xl2tpd START. Kalau saat itu jaringan mitra
+#      belum siap (router mitra lebih lambat menyala daripada appliance),
+#      dial pertamanya gagal.
+#   2. `redial` mengurus sesi yang PUTUS sesudah sempat naik. Apakah dial
+#      PERTAMA yang gagal ikut dihitung "disconnected" berbeda antar versi
+#      xl2tpd, dan `max redials` tetap angka berhingga.
+#
+# Jadi kedua mekanisme itu menutup kasus yang paling sering, bukan semuanya.
+# Berkas ini menutup sisanya dengan satu aturan yang tidak bergantung versi:
+# kalau tak ada sesi PPP, dial lagi. Itu saja.
+#
+# Ia DIAM kalau tidak ada yang perlu dikerjakan — appliance yang sehat tidak
+# menulis apa pun ke log, supaya baris yang muncul di /var/log/radius-vpn.log
+# selalu berarti sesuatu memang terjadi.
+set -euo pipefail
+
+LOG="/var/log/radius-vpn.log"
+CONF="/etc/xl2tpd/xl2tpd.conf"
+PENANDA="dihasilkan radius-vpn-connect"
+
+catat() { echo "$(date -Is) watchdog: $*" >>"$LOG"; }
+
+# Appliance yang BELUM di-enroll tidak punya LAC milik kita. Mendial di sini
+# berarti menyuruh xl2tpd membuka panggilan ke LAC yang tidak ada — galat yang
+# berulang tiap menit di log mesin yang sebenarnya sehat, cuma belum dipakai.
+[ -f "$CONF" ] && grep -q "$PENANDA" "$CONF" || exit 0
+
+# Sudah ada alamat di ppp/l2tp → tidak ada yang perlu dikerjakan.
+ip -4 -o addr show 2>/dev/null | grep -qE ' (ppp|l2tp)' && exit 0
+
+# pppd sudah lahir tapi IPCP belum selesai: dial lagi sekarang berarti
+# panggilan KEDUA ke LAC yang sama — dua sesi, dua alamat, dan concentrator
+# memegang sesi basi yang tak ada yang menutup. Beri waktu satu siklus timer.
+pgrep -x pppd >/dev/null 2>&1 && exit 0
+
+# xl2tpd mati (OOM, crash, atau gagal start saat boot) — hidupkan lagi; `start`
+# pada unit yang sudah aktif tidak melakukan apa-apa, jadi aman.
+systemctl is-active --quiet xl2tpd || {
+  catat "xl2tpd tidak aktif — dinyalakan"
+  systemctl start xl2tpd || true
+}
+
+# FIFO-nya WAJIB diuji dengan -p, bukan sekadar ada: kalau xl2tpd belum
+# membuatnya, `echo >` justru MEMBUAT berkas biasa di tempat itu, exit 0, dan
+# perintah dial-nya hilang ke berkas yang tak dibaca siapa pun — sekaligus
+# menghalangi xl2tpd membuat FIFO yang benar pada start berikutnya.
+CONTROL=""
+for _ in $(seq 1 10); do
+  for kandidat in /var/run/xl2tpd/l2tp-control /run/xl2tpd/l2tp-control \
+                  /var/run/xl2tpd-control; do
+    [ -p "$kandidat" ] && CONTROL="$kandidat" && break
+  done
+  [ -n "$CONTROL" ] && break
+  sleep 1
+done
+[ -n "$CONTROL" ] || {
+  catat "GAGAL — xl2tpd tidak membuat FIFO kontrolnya, tak ada yang bisa didial"
+  exit 1
+}
+
+echo "c concentrator" >"$CONTROL"
+catat "tidak ada sesi PPP — dial ulang dikirim"

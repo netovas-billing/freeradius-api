@@ -41,6 +41,22 @@ refuse pap = yes
 require authentication = yes
 pppoptfile = /etc/ppp/options.l2tpd.client
 length bit = yes
+; JEBAKAN 6 — inilah yang membuat tunnel naik lagi SENDIRI sesudah appliance
+; reboot. Tanpa `autodial`, xl2tpd start, membaca LAC ini, membuat FIFO
+; kontrolnya, lalu DIAM: LAC cuma definisi, tak ada panggilan yang dibuka.
+; Satu-satunya pendial adalah `c concentrator` di bawah — dan itu dijalankan
+; manusia, sekali, saat enroll. Jadi sebelum baris ini ada, satu kedipan
+; listrik di tempat mitra = RADIUS mati sampai ada yang datang mengetik ulang.
+;
+; `redial` mengurus sesi yang PUTUS sesudah sempat naik. `max redials` ditulis
+; eksplisit dan BESAR, bukan 0: man page tidak menyebut nilai bawaannya, dan
+; pembacaan "0 = tak terhingga" adalah tebakan yang justru bisa berarti
+; kebalikannya (tak pernah redial). Appliance ini harus menyusul sendiri saat
+; concentrator kembali hidup, berapa pun lamanya.
+autodial = yes
+redial = yes
+redial timeout = 10
+max redials = 32767
 EOF
 
 cat >/etc/ppp/options.l2tpd.client <<EOF
@@ -56,9 +72,12 @@ noipdefault
 usepeerdns
 connect-delay 5000
 name ${USER_PPP}
-# persist + maxfail 0: tunnel naik lagi sendiri sesudah appliance reboot atau
-# jaringan mitra putus. Tanpa ini satu gangguan sesaat berarti RADIUS mati
-# sampai ada yang menyadarinya — dan yang menyadarinya biasanya pelanggan.
+# persist + maxfail 0 menjaga pppd yang SEDANG HIDUP tetap mencoba saat
+# negosiasi gagal. Keduanya TIDAK memulihkan apa pun sesudah reboot, dan dulu
+# komentar di sini mengklaim sebaliknya: pppd bukan proses mandiri, ia anak
+# xl2tpd di atas pty, dijalankan per-call dan di-TERM saat call dibongkar.
+# Yang memulihkan sesudah reboot adalah `autodial` di xl2tpd.conf (di atas),
+# dan `radius-vpn-watchdog` sebagai jaring terakhir.
 persist
 maxfail 0
 holdoff 10
@@ -153,9 +172,18 @@ done
   exit 1
 }
 
-echo "c concentrator" >"$CONTROL"
-
+# Sesudah `autodial = yes`, restart di atas SUDAH mendial. Dial manual di sini
+# hanya cadangan — dikirim kalau 12 detik berlalu tanpa sesi. Mengirimnya tanpa
+# memeriksa berarti membuka panggilan KEDUA ke LAC yang sama: dua sesi PPP,
+# dua alamat, dan concentrator memegang sesi basi yang tak ada yang menutup.
 echo -n "menunggu tunnel naik"
+ada_sesi() { ip -4 -o addr show 2>/dev/null | grep -qE ' (ppp|l2tp)'; }
+for _ in $(seq 1 6); do
+  ada_sesi && break
+  echo -n "."
+  sleep 2
+done
+ada_sesi || echo "c concentrator" >"$CONTROL"
 for _ in $(seq 1 30); do
   if ip -4 -o addr show 2>/dev/null | grep -qE ' (ppp|l2tp)'; then
     echo
@@ -169,7 +197,7 @@ for _ in $(seq 1 30); do
 done
 
 echo
-echo "GAGAL: tunnel tidak naik dalam 60 detik." >&2
+echo "GAGAL: tunnel tidak naik dalam ~70 detik." >&2
 echo >&2
 # Log-nya DICETAK, tidak cuma disuruh dibaca: yang menjalankan ini adalah orang
 # yang baru memasang appliance, dan "jalankan journalctl" berarti sesi

@@ -20,8 +20,11 @@ install -d -m 755 /var/lib/radius-appliance
 install -m 700 firstboot.sh          /usr/local/sbin/firstboot.sh
 install -m 755 radius-vpn-connect    /usr/local/sbin/radius-vpn-connect
 install -m 755 radius-erp-enroll     /usr/local/sbin/radius-erp-enroll
+install -m 755 radius-vpn-watchdog   /usr/local/sbin/radius-vpn-watchdog
 install -m 644 radius-appliance-firstboot.service \
   /etc/systemd/system/radius-appliance-firstboot.service
+install -m 644 radius-vpn-watchdog.service /etc/systemd/system/radius-vpn-watchdog.service
+install -m 644 radius-vpn-watchdog.timer   /etc/systemd/system/radius-vpn-watchdog.timer
 
 # STACK_DIR disuntik ke unit kalau bukan nilai bawaan, supaya skripnya tidak
 # perlu menebak lokasi stack.
@@ -35,6 +38,11 @@ fi
 
 systemctl daemon-reload
 systemctl enable radius-appliance-firstboot.service
+# TIMER-nya yang di-enable, bukan servicenya: meng-enable unit oneshot membuat
+# systemd menjalankannya sekali saat boot lalu tak pernah lagi — persis
+# kebalikan dari gunanya. Aman menyala di golden image: skripnya keluar diam
+# selama xl2tpd.conf belum memuat LAC hasil radius-vpn-connect.
+systemctl enable radius-vpn-watchdog.timer
 
 cat <<EOF
 
@@ -42,7 +50,9 @@ Terpasang:
   /usr/local/sbin/firstboot.sh
   /usr/local/sbin/radius-vpn-connect
   /usr/local/sbin/radius-erp-enroll
+  /usr/local/sbin/radius-vpn-watchdog
   radius-appliance-firstboot.service (enabled, belum dijalankan)
+  radius-vpn-watchdog.timer (enabled — diam sampai appliance di-enroll)
 
 Sisa langkah A1 sebelum sanitasi:
   1. cd ${STACK_DIR} && ./setup.sh        # bootstrap raddb dari image FreeRADIUS
