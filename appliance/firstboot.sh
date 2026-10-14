@@ -127,22 +127,70 @@ done
 echo "menjalankan stack ..."
 docker compose up -d
 
-# ---- 5. Ringkasan di layar konsol ------------------------------------------
+# ---- 5. Sandi root unik per appliance --------------------------------------
 #
-# Ditulis ke /etc/issue supaya terbaca LANGSUNG di layar konsol Proxmox, tanpa
-# mitra perlu login atau SSH. Yang dicetak SENGAJA bukan kredensial: tidak ada
-# lagi yang perlu dibaca dari sini dan diketik ke ERP.
+# Sampai 14 Okt 2026 tidak ada apa pun di repo ini yang menetapkan sandi root,
+# dan tidak ada satu pun dokumen yang menyebutkannya. Akibatnya dua-duanya
+# buruk sekaligus: mitra membuka konsol, melihat prompt `login:`, dan BERHENTI
+# di situ — sementara sandi yang sebenarnya dipakai adalah apa pun yang
+# diketik orang yang memasang Debian di golden image, yaitu sandi yang SAMA
+# untuk setiap mitra yang pernah menerima OVA ini.
+#
+# Alfabetnya sengaja tanpa karakter yang kembar di layar konsol: tidak ada
+# 0/O, 1/I/L, U/V. Mitra membacanya dari layar lalu mengetiknya — di situ
+# "sandi yang kuat" yang salah baca satu huruf sama saja dengan pintu terkunci.
+# 10 karakter dari 30 lambang ≈ 49 bit; itu jauh lebih dari cukup untuk sesuatu
+# yang hanya bisa dicoba lewat konsol hypervisor mitra sendiri.
+#
+# Dicetak di /etc/issue, yaitu layar yang sudah tampil SEBELUM login. Yang bisa
+# melihatnya adalah orang yang sudah memegang konsol Proxmox mitra — dan orang
+# itu toh bisa memasang disk VM ini dan membaca seluruh isinya tanpa sandi apa
+# pun. Jadi yang dilindungi di sini bukan rahasianya dari pemilik hypervisor,
+# melainkan dari SESAMA MITRA: tanpa ini semua appliance memakai sandi yang
+# sama, dan itulah yang tidak punya gejala sampai ada yang menyadarinya.
+SANDI_ROOT=""
+for _ in 1 2 3 4 5; do
+  SANDI_ROOT="$(openssl rand -base64 64 | tr -dc '23456789ABCDEFGHJKMNPQRSTWXYZ' | cut -c1-10)"
+  [ "${#SANDI_ROOT}" -eq 10 ] && break
+done
+[ "${#SANDI_ROOT}" -eq 10 ] || {
+  echo "GAGAL membangkitkan sandi root — jangan lanjut, mitra tak akan bisa masuk" >&2
+  exit 1
+}
+HASH_LAMA="$(awk -F: '$1=="root"{print $2}' /etc/shadow)"
+echo "root:${SANDI_ROOT}" | chpasswd
+# DIVERIFIKASI: chpasswd bisa gagal karena aturan PAM (mis. pwquality) dan
+# exit code-nya tidak selalu menular lewat pipe. Kalau hash-nya tidak berubah,
+# yang berlaku adalah sandi lama dari golden image — dan layar konsol akan
+# menampilkan sandi yang tidak bisa dipakai, bentuk kegagalan paling
+# membingungkan yang bisa diterima mitra.
+[ "$(awk -F: '$1=="root"{print $2}' /etc/shadow)" != "$HASH_LAMA" ] || {
+  echo "GAGAL: sandi root TIDAK berubah — yang berlaku masih sandi golden image." >&2
+  echo "Periksa PAM/pwquality di image; jangan kirim OVA ini ke mitra." >&2
+  exit 1
+}
+
+# ---- 6. Ringkasan di layar konsol ------------------------------------------
+#
+# Ditulis ke /etc/issue supaya terbaca LANGSUNG di layar konsol Proxmox,
+# sebelum login. Mode 600: agetty membacanya sebagai root, jadi tak ada yang
+# hilang, sementara pengguna lain di dalam VM tidak ikut membaca sandinya.
 install -d -m 755 /var/lib/radius-appliance
-cat > /etc/issue <<'EOF'
+cat > /etc/issue <<EOF
 
   Appliance RADIUS — Netovas
   --------------------------
   Stack sudah berjalan. Appliance ini BELUM tersambung ke ERP.
 
-  Minta operator mendaftarkannya di ERP (Infrastruktur > RADIUS > Tambah),
-  lalu SALIN satu baris perintah yang muncul di layar ERP dan tempel di
-  sini. Tidak ada nilai apa pun yang perlu dibaca dari layar ini.
+  MASUK DI SINI:   login: root     sandi: ${SANDI_ROOT}
+  (ganti kapan saja dengan perintah: passwd)
+
+  Lalu daftarkan appliance ini di ERP (Infrastruktur > RADIUS > Tambah),
+  salin satu baris perintah yang muncul di layar ERP, dan tempel di sini
+  lewat Console > xterm.js. Tidak ada nilai lain yang perlu dibaca dari
+  layar ini.
 
 EOF
+chmod 600 /etc/issue
 date -Is > "$TANDA"
 echo "firstboot selesai."
