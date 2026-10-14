@@ -89,6 +89,41 @@ bisa membaca RADIUS mitra lain.
 
 Sanitasi (langkah A3) harus membuang **keduanya**: tanda itu dan `.env`.
 
+## Tempel baris enroll: xterm.js, bukan noVNC
+
+Baris `radius-erp-enroll` panjangnya ~180 karakter, 112 di antaranya dua nilai
+hex. Mengetiknya ulang bukan pilihan, dan di konsol Proxmox bawaan
+**menempelnya juga bukan pilihan**: noVNC mengirim *scancode* — seolah ada yang
+menekan keyboard — dan panel *clipboard*-nya hanya men-set clipboard remote,
+yang pada guest headless tanpa `spice-vdagent` tidak dibaca siapa pun. Mitra
+menempel, lalu **tidak terjadi apa-apa**: tanpa galat, tanpa teks.
+
+`Console → xterm.js` bicara ke `serial0 socket` dan mengirim **byte**. Itu
+menghapus satu kelas galat sekaligus: layout keyboard mitra tidak lagi
+berpengaruh, capslock/numlock tak bisa desinkron, dan karakter tak hilang
+karena ketik cepat. Tempel dengan `Ctrl+Shift+V`.
+
+Syaratnya terbagi, dan pembagian itu yang menentukan dokumen mitra:
+
+| | di mana | siapa |
+|---|---|---|
+| `console=tty0 console=ttyS0,115200n8` + `update-grub` | golden image | `install-appliance.sh` |
+| perangkat Serial Port di VM | config hypervisor | **mitra**, 5 klik, VM mati |
+
+Impor OVA Proxmox **tidak** membawa definisi serial port (importer-nya hanya
+memetakan disk, CPU/RAM, NIC, firmware), jadi lima klik itu tak bisa
+dihilangkan dari sisi kita. Dua hal yang menyelamatkan appliance kalau mitra
+salah langkah: urutan `console=` menaruh `tty0` lebih dulu sehingga noVNC tetap
+menampilkan pesan boot, dan **Display** VM tidak boleh di-set ke "Serial
+terminal 0" — itu mematikan satu-satunya jalan mundur.
+
+Tidak ada `systemctl enable serial-getty@ttyS0`: `systemd-getty-generator`
+men-spawn-nya sendiri saat `console=ttyS0` ada DAN portnya memang ada. Enable
+eksplisit justru meninggalkan unit `failed` di VM yang tak punya serial.
+
+Gejala khas: layar hitam diam di xterm.js = perangkat serial belum ditambahkan.
+Itu terlihat persis seperti appliance mati, jadi tulis di panduan mitra.
+
 ## Sesudah reboot, tunnel naik lagi sendiri — tiga lapis
 
 Appliance duduk di lokasi mitra tanpa penjaga, jadi satu kedipan listrik tidak

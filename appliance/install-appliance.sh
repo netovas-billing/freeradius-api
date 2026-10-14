@@ -36,6 +36,54 @@ Environment=STACK_DIR=${STACK_DIR}
 EOF
 fi
 
+# ---- Konsol serial: supaya mitra bisa MENEMPEL, bukan mengetik ------------
+#
+# Baris enroll panjangnya ~180 karakter, 112 di antaranya dua nilai hex. Di
+# konsol noVNC Proxmox, "tempel" tidak ada artinya: VNC mengirim SCANCODE —
+# seolah mitra menekan tombol satu per satu — jadi panel clipboard-nya men-set
+# clipboard remote yang tak dibaca siapa pun di guest headless. Mitra menempel,
+# TIDAK TERJADI APA-APA, tak ada galat, dan ia menyimpulkan appliance hang.
+#
+# xterm.js Proxmox bicara lewat `serial0 socket` dan mengirim BYTE. Seluruh
+# kelas galat hilang sekaligus: layout keyboard mitra jadi tidak relevan,
+# capslock/numlock tak bisa desinkron, dan karakter tak hilang karena ketik
+# cepat. Ctrl+Shift+V bekerja.
+#
+# Sisi guest-nya disiapkan DI SINI, sekali, di golden image. Sisi hypervisor
+# (perangkat Serial Port) tidak bisa: impor OVA Proxmox tidak memetakan
+# ResourceType 21, jadi mitra tetap menambahnya lewat UI — 5 klik, VM mati.
+#
+# URUTAN `console=` PENTING. Yang TERAKHIR menentukan /dev/console, jadi tty0
+# ditulis lebih dulu supaya noVNC tetap menampilkan pesan boot sebagai jalan
+# mundur. Appliance yang kehilangan SEMUA konsol tidak bisa ditolong dari jauh.
+#
+# Tidak ada `systemctl enable serial-getty@ttyS0`: systemd-getty-generator
+# men-spawn-nya sendiri saat `console=ttyS0` ada DAN portnya memang ada. Enable
+# eksplisit akan meninggalkan unit `failed` di VM yang tak punya serial.
+GRUB_DEF=/etc/default/grub
+if [ -f "$GRUB_DEF" ] && command -v update-grub >/dev/null 2>&1; then
+  if grep -q 'console=ttyS0' "$GRUB_DEF"; then
+    echo "konsol serial: sudah ada di $GRUB_DEF, dilewati"
+  else
+    cp -a "$GRUB_DEF" "$GRUB_DEF.sebelum-radius"
+    sed -i -E 's|^GRUB_CMDLINE_LINUX="(.*)"$|GRUB_CMDLINE_LINUX="\1 console=tty0 console=ttyS0,115200n8"|' "$GRUB_DEF"
+    # DIVERIFIKASI, bukan diasumsikan: kalau barisnya tak berbentuk seperti
+    # dugaan sed, ia gagal diam dan appliance lahir tanpa konsol serial —
+    # ketahuannya di tempat mitra, saat xterm.js memberi layar hitam.
+    grep -q 'console=ttyS0' "$GRUB_DEF" || {
+      echo "GAGAL menambahkan console=ttyS0 ke $GRUB_DEF — periksa baris" >&2
+      echo "GRUB_CMDLINE_LINUX di sana, lalu tambahkan tangan:" >&2
+      echo '  GRUB_CMDLINE_LINUX="console=tty0 console=ttyS0,115200n8"' >&2
+      exit 1
+    }
+    update-grub
+    echo "konsol serial dipasang — mitra bisa memakai Console > xterm.js"
+  fi
+else
+  echo "PERINGATAN: $GRUB_DEF/update-grub tidak ada — konsol serial dilewati." >&2
+  echo "Mitra hanya punya noVNC, dan di sana baris enroll TIDAK bisa ditempel." >&2
+fi
+
 systemctl daemon-reload
 systemctl enable radius-appliance-firstboot.service
 # TIMER-nya yang di-enable, bukan servicenya: meng-enable unit oneshot membuat
