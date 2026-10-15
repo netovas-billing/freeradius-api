@@ -198,7 +198,8 @@ cat > /etc/issue <<EOF
   Stack sudah berjalan. Appliance ini BELUM tersambung ke ERP.
 
   MASUK DI SINI:   login: root     sandi: ${SANDI_ROOT}
-  (sandi ini juga dipegang NOC — beri tahu NOC lebih dulu kalau diganti,
+  (sandi ini sudah siap pakai — Anda TIDAK akan diminta menggantinya.
+   NOC memegang salinannya; beri tahu NOC lebih dulu kalau tetap diganti,
    kalau tidak kami tak bisa menolong appliance ini dari jarak jauh)
 
   Lalu daftarkan appliance ini di ERP (Infrastruktur > RADIUS > Tambah),
