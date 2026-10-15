@@ -170,6 +170,21 @@ echo "root:${SANDI_ROOT}" | chpasswd
   exit 1
 }
 
+# Umur sandi DIMATIKAN, dan ini bukan kelonggaran — ini syarat supaya appliance
+# bisa di-troubleshoot. Kalau sandi root kedaluwarsa (warisan `chage`/
+# `passwd --expire` di golden image, atau PASS_MAX_DAYS di /etc/login.defs),
+# login pertama mitra dipaksa mengganti sandi — dan sejak detik itu sandi yang
+# dipegang NOC tidak berlaku lagi, sementara nilai penggantinya tidak ada di
+# mana pun. Appliance jadi kotak hitam justru pada saat ia bermasalah.
+#
+# Akses tetap NOC TIDAK bergantung pada baris ini: itu kunci SSH di
+# /root/.ssh/authorized_keys (A3), yang selamat walau mitra mengganti sandinya
+# sendiri. Yang dijaga di sini hanya satu hal — jangan pernah ada paksaan ganti
+# sandi yang tak diminta siapa pun.
+chage -M -1 -I -1 -E -1 -d "$(date +%Y-%m-%d)" root || {
+  echo "PERINGATAN: gagal mematikan umur sandi root — periksa chage/login.defs" >&2
+}
+
 # ---- 6. Ringkasan di layar konsol ------------------------------------------
 #
 # Ditulis ke /etc/issue supaya terbaca LANGSUNG di layar konsol Proxmox,
@@ -183,7 +198,8 @@ cat > /etc/issue <<EOF
   Stack sudah berjalan. Appliance ini BELUM tersambung ke ERP.
 
   MASUK DI SINI:   login: root     sandi: ${SANDI_ROOT}
-  (ganti kapan saja dengan perintah: passwd)
+  (sandi ini juga dipegang NOC — beri tahu NOC lebih dulu kalau diganti,
+   kalau tidak kami tak bisa menolong appliance ini dari jarak jauh)
 
   Lalu daftarkan appliance ini di ERP (Infrastruktur > RADIUS > Tambah),
   salin satu baris perintah yang muncul di layar ERP, dan tempel di sini
