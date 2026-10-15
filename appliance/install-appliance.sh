@@ -138,6 +138,71 @@ if [ -f /etc/login.defs ] && grep -qE '^[[:space:]]*PASS_MAX_DAYS[[:space:]]+[0-
   echo "PASS_MAX_DAYS di /etc/login.defs disetel -1 (tanpa kedaluwarsa)."
 fi
 
+# ---- SSH: root boleh masuk dengan sandi ------------------------------------
+#
+# Keputusan pemilik 15 Okt 2026: "dengan ssh harusnya masih bisa dengan
+# password walaupun login sebagai root". Bawaan Debian `prohibit-password`
+# menolak sandi root lewat SSH, jadi ia ditimpa di sini.
+#
+# YANG PERLU DIKETAHUI ORANG BERIKUTNYA. Sandi root SAMA di semua appliance
+# (keputusan 15 Okt juga), dan semua appliance duduk di SATU ruang alamat
+# tunnel yang sama. Dengan `PermitRootLogin yes`, mitra mana pun yang membaca
+# sandi di appliance-nya sendiri — yang memang hak dia — bisa SSH sebagai root
+# ke appliance mitra LAIN. Dua pengaman yang dulu menahan ini sudah dilepas
+# berurutan: sandi unik per appliance (dicabut) dan prohibit-password (ini).
+#
+# Karena itu ada NOC_SSH_FROM. Isi dengan alamat/CIDR tempat NOC masuk, dan
+# sandi hanya berlaku dari sana — appliance tetangga di ruang tunnel yang sama
+# tidak bisa memakainya, sementara NOC tetap bisa masuk dengan sandi seperti
+# yang diminta. Dikosongkan = terbuka dari mana saja, dan itu dicetak sebagai
+# peringatan, bukan didiamkan.
+#
+#   NOC_SSH_FROM="172.16.0.0/12" ./install-appliance.sh
+#
+# Ditulis ke sshd_config.d/, bukan menambal sshd_config: baris yang ditambal
+# bisa kalah oleh nilai lain di berkas utama, dan urutan "yang pertama menang"
+# di sshd membuat kegagalannya senyap.
+SSHD_DROPIN="/etc/ssh/sshd_config.d/10-netovas-appliance.conf"
+install -d -m 755 /etc/ssh/sshd_config.d
+if ! grep -qE '^[[:space:]]*Include[[:space:]]+/etc/ssh/sshd_config\.d/\*\.conf' /etc/ssh/sshd_config; then
+  echo "PERINGATAN: /etc/ssh/sshd_config tidak meng-Include sshd_config.d/." >&2
+  echo "  Setelan SSH appliance TIDAK akan berlaku. Tambahkan barisnya di paling atas:" >&2
+  echo "  Include /etc/ssh/sshd_config.d/*.conf" >&2
+fi
+
+if [ -n "${NOC_SSH_FROM:-}" ]; then
+  cat > "$SSHD_DROPIN" <<EOF
+# Dikelola install-appliance.sh — jangan disunting tangan.
+# Sandi hanya berlaku dari alamat NOC; dari mana pun selain itu wajib kunci.
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+Match Address ${NOC_SSH_FROM}
+    PermitRootLogin yes
+    PasswordAuthentication yes
+EOF
+  echo "SSH: root boleh sandi HANYA dari ${NOC_SSH_FROM}; selain itu wajib kunci."
+else
+  cat > "$SSHD_DROPIN" <<'EOF'
+# Dikelola install-appliance.sh — jangan disunting tangan.
+PermitRootLogin yes
+PasswordAuthentication yes
+EOF
+  echo "PERINGATAN: NOC_SSH_FROM kosong — root boleh masuk dengan sandi dari MANA SAJA," >&2
+  echo "  termasuk dari appliance mitra lain di ruang alamat tunnel yang sama, dan sandi" >&2
+  echo "  itu sama di semua appliance. Setel NOC_SSH_FROM untuk mempersempitnya." >&2
+fi
+chmod 644 "$SSHD_DROPIN"
+
+# WAJIB diuji: sshd yang konfigurasinya tak sah TIDAK start di boot berikutnya,
+# dan appliance itu lahir tanpa SSH sama sekali — di tempat mitra.
+sshd -t || {
+  echo "GAGAL: konfigurasi sshd tidak sah sesudah menulis $SSHD_DROPIN" >&2
+  rm -f "$SSHD_DROPIN"
+  exit 1
+}
+systemctl reload ssh 2>/dev/null || systemctl restart ssh 2>/dev/null || true
+echo "Berlaku: $(sshd -T 2>/dev/null | grep -iE '^(permitrootlogin|passwordauthentication)' | tr '\n' ' ')"
+
 # ---- Akun yang dipakai mitra untuk masuk -----------------------------------
 #
 # Mitra boleh masuk sebagai root, boleh juga sebagai pengguna biasa yang
@@ -185,6 +250,11 @@ Umur sandi root dimatikan di image ini: NOC maupun mitra tidak akan pernah
 diminta mengganti sandi saat login pertama. JANGAN tambahkan
 `passwd --expire root` di sanitasi (A3) — itu menghidupkannya lagi, dan sandi
 yang dipegang NOC mati pada login pertama mitra.
+
+SSH: root boleh masuk dengan sandi (${SSHD_DROPIN}). Kalau NOC_SSH_FROM tidak
+diisi, sandi yang SAMA di semua appliance itu berlaku dari mana saja di dalam
+tunnel — termasuk dari appliance mitra lain. Isi NOC_SSH_FROM untuk
+mempersempitnya ke alamat NOC saja.
 
 Sisa langkah A1 sebelum sanitasi:
   1. cd ${STACK_DIR} && ./setup.sh        # bootstrap raddb dari image FreeRADIUS
