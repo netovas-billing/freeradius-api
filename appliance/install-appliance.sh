@@ -213,6 +213,30 @@ echo "Berlaku: $(sshd -T 2>/dev/null | grep -iE '^(permitrootlogin|passwordauthe
 # pengguna itu harus benar-benar bisa sudo. Baris enroll dari ERP berawalan
 # `sudo`, jadi pengguna yang tidak ber-sudo akan menempel baris yang benar lalu
 # ditolak — dan penolakannya terjadi di tempat mitra, bukan di lab.
+# AKUN_MITRA=<user> membuat langkah `usermod -aG sudo` tidak perlu diketik
+# tangan. Sengaja OPT-IN, bukan otomatis untuk setiap pengguna yang kebetulan
+# ada: menaikkan hak akun tanpa diminta adalah hal yang tidak boleh terjadi
+# diam-diam, sekalipun di appliance satu-guna.
+#
+#   AKUN_MITRA=opsnoc ./install-appliance.sh
+if [ -n "${AKUN_MITRA:-}" ]; then
+  id "$AKUN_MITRA" >/dev/null 2>&1 || {
+    echo "GAGAL: pengguna '$AKUN_MITRA' tidak ada di image ini." >&2
+    echo "  Buat dulu: adduser $AKUN_MITRA" >&2
+    exit 1
+  }
+  usermod -aG sudo "$AKUN_MITRA"
+  # DIVERIFIKASI, bukan diandaikan: usermod bisa sukses sementara grup sudo
+  # tak ada sama sekali (paket sudo belum terpasang), dan appliance lahir
+  # dengan akun yang tak bisa apa-apa.
+  id -nG "$AKUN_MITRA" | tr ' ' '\n' | grep -qx sudo || {
+    echo "GAGAL: '$AKUN_MITRA' tetap bukan anggota grup sudo sesudah usermod." >&2
+    echo "  Paket sudo sudah terpasang? apt install -y sudo" >&2
+    exit 1
+  }
+  echo "Akun login mitra: $AKUN_MITRA — ditambahkan ke grup sudo."
+fi
+
 manusia="$(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd)"
 if [ -n "$manusia" ]; then
   for u in $manusia; do
@@ -220,13 +244,29 @@ if [ -n "$manusia" ]; then
       echo "Akun login mitra: $u (anggota grup sudo) — siap."
     else
       echo "PERINGATAN: pengguna '$u' ADA tapi tidak di grup sudo." >&2
-      echo "  Kalau dia yang akan dipakai mitra: usermod -aG sudo $u" >&2
-      echo "  Kalau mitra memakai root saja, abaikan." >&2
+      echo "  Kalau dia yang akan dipakai mitra: AKUN_MITRA=$u ./install-appliance.sh" >&2
+      echo "  (atau usermod -aG sudo $u). Kalau mitra memakai root saja, abaikan." >&2
     fi
   done
 else
   echo "Tidak ada pengguna biasa — mitra akan masuk sebagai root."
 fi
+
+# Akun root TERKUNCI = seluruh keputusan "root boleh SSH dengan sandi" batal
+# tanpa gejala. Debian installer mengunci root (sandi `!` di /etc/shadow)
+# kalau sandi root dikosongkan saat memasang — dan di jalur itu ia justru
+# memasang sudo serta memasukkan pengguna pertama ke grup sudo sendiri. Jadi
+# dua perilaku yang berlawanan, dan yang membedakan cuma satu isian di layar
+# installer yang diisi berminggu-minggu sebelumnya.
+case "$(passwd -S root 2>/dev/null | awk '{print $2}')" in
+  P) : ;;
+  L|NP|"")
+    echo "PERINGATAN: akun root TERKUNCI atau tanpa sandi di image ini." >&2
+    echo "  root tidak akan bisa masuk — lewat konsol maupun SSH — walau" >&2
+    echo "  PermitRootLogin yes. Kalau mitra memakai root: passwd root" >&2
+    echo "  Kalau mitra memakai pengguna ber-sudo, ini memang disengaja." >&2
+    ;;
+esac
 
 systemctl daemon-reload
 systemctl enable radius-appliance-firstboot.service
@@ -255,6 +295,10 @@ SSH: root boleh masuk dengan sandi (${SSHD_DROPIN}). Kalau NOC_SSH_FROM tidak
 diisi, sandi yang SAMA di semua appliance itu berlaku dari mana saja di dalam
 tunnel — termasuk dari appliance mitra lain. Isi NOC_SSH_FROM untuk
 mempersempitnya ke alamat NOC saja.
+
+Jalur pengguna biasa? Grup sudo TIDAK otomatis kalau sandi root diisi saat
+memasang Debian. Jalankan ulang dengan AKUN_MITRA=<user> (ia memverifikasi
+hasilnya), atau usermod -aG sudo <user> sebelum sanitasi A3.
 
 Sisa langkah A1 sebelum sanitasi:
   1. cd ${STACK_DIR} && ./setup.sh        # bootstrap raddb dari image FreeRADIUS
