@@ -127,60 +127,38 @@ done
 echo "menjalankan stack ..."
 docker compose up -d
 
-# ---- 5. Sandi root unik per appliance --------------------------------------
+# ---- 5. Umur sandi root ----------------------------------------------------
 #
-# Sampai 14 Okt 2026 tidak ada apa pun di repo ini yang menetapkan sandi root,
-# dan tidak ada satu pun dokumen yang menyebutkannya. Akibatnya dua-duanya
-# buruk sekaligus: mitra membuka konsol, melihat prompt `login:`, dan BERHENTI
-# di situ — sementara sandi yang sebenarnya dipakai adalah apa pun yang
-# diketik orang yang memasang Debian di golden image, yaitu sandi yang SAMA
-# untuk setiap mitra yang pernah menerima OVA ini.
+# Sandi root TIDAK diganti di sini, dan itu keputusan pemilik (15 Okt 2026):
+# "jangan ada perubahan password otomatis di firstboot, tidak apa apa semua
+# mitra nantinya sama semua passwordnya". Yang berlaku adalah sandi yang
+# ditetapkan NOC saat memasang Debian di golden image, dan NOC mengirimkannya
+# ke mitra bersama berkas OVA.
 #
-# Alfabetnya sengaja tanpa karakter yang kembar di layar konsol: tidak ada
-# 0/O, 1/I/L, U/V. Mitra membacanya dari layar lalu mengetiknya — di situ
-# "sandi yang kuat" yang salah baca satu huruf sama saja dengan pintu terkunci.
-# 10 karakter dari 30 lambang ≈ 49 bit; itu jauh lebih dari cukup untuk sesuatu
-# yang hanya bisa dicoba lewat konsol hypervisor mitra sendiri.
+# Versi sebelumnya (b374b3f) membangkitkan sandi acak 10 karakter di sini.
+# Itu dicabut karena harganya dibayar di tempat yang salah: appliance menyala,
+# mitra ATAU NOC mencoba masuk dengan sandi yang mereka tahu — dan ditolak,
+# tanpa petunjuk apa pun, sampai firstboot selesai dan sandi barunya muncul di
+# layar. Menit-menit pertama appliance baru justru menit paling sering dipakai
+# untuk memeriksanya.
 #
-# Dicetak di /etc/issue, yaitu layar yang sudah tampil SEBELUM login. Yang bisa
-# melihatnya adalah orang yang sudah memegang konsol Proxmox mitra — dan orang
-# itu toh bisa memasang disk VM ini dan membaca seluruh isinya tanpa sandi apa
-# pun. Jadi yang dilindungi di sini bukan rahasianya dari pemilik hypervisor,
-# melainkan dari SESAMA MITRA: tanpa ini semua appliance memakai sandi yang
-# sama, dan itulah yang tidak punya gejala sampai ada yang menyadarinya.
-SANDI_ROOT=""
-for _ in 1 2 3 4 5; do
-  SANDI_ROOT="$(openssl rand -base64 64 | tr -dc '23456789ABCDEFGHJKMNPQRSTWXYZ' | cut -c1-10)"
-  [ "${#SANDI_ROOT}" -eq 10 ] && break
-done
-[ "${#SANDI_ROOT}" -eq 10 ] || {
-  echo "GAGAL membangkitkan sandi root — jangan lanjut, mitra tak akan bisa masuk" >&2
-  exit 1
-}
-HASH_LAMA="$(awk -F: '$1=="root"{print $2}' /etc/shadow)"
-echo "root:${SANDI_ROOT}" | chpasswd
-# DIVERIFIKASI: chpasswd bisa gagal karena aturan PAM (mis. pwquality) dan
-# exit code-nya tidak selalu menular lewat pipe. Kalau hash-nya tidak berubah,
-# yang berlaku adalah sandi lama dari golden image — dan layar konsol akan
-# menampilkan sandi yang tidak bisa dipakai, bentuk kegagalan paling
-# membingungkan yang bisa diterima mitra.
-[ "$(awk -F: '$1=="root"{print $2}' /etc/shadow)" != "$HASH_LAMA" ] || {
-  echo "GAGAL: sandi root TIDAK berubah — yang berlaku masih sandi golden image." >&2
-  echo "Periksa PAM/pwquality di image; jangan kirim OVA ini ke mitra." >&2
-  exit 1
-}
-
-# Umur sandi DIMATIKAN, dan ini bukan kelonggaran — ini syarat supaya appliance
-# bisa di-troubleshoot. Kalau sandi root kedaluwarsa (warisan `chage`/
-# `passwd --expire` di golden image, atau PASS_MAX_DAYS di /etc/login.defs),
-# login pertama mitra dipaksa mengganti sandi — dan sejak detik itu sandi yang
-# dipegang NOC tidak berlaku lagi, sementara nilai penggantinya tidak ada di
-# mana pun. Appliance jadi kotak hitam justru pada saat ia bermasalah.
+# Yang hilang karena ini: sandi root sama di semua appliance. Yang menahan
+# akibatnya: sshd Debian berjalan `PermitRootLogin prohibit-password`, jadi
+# sandi itu TIDAK bisa dipakai dari jauh — termasuk oleh sesama mitra lewat
+# ruang alamat tunnel yang sama. Ia hanya berlaku di konsol hypervisor mitra
+# sendiri, tempat yang toh sudah bisa memasang disk VM ini dan membacanya
+# tanpa sandi apa pun. Akses NOC dari jauh berjalan lewat kunci SSH, bukan
+# sandi ini. Kalau kelak `PermitRootLogin` dilonggarkan jadi `yes`, keputusan
+# ini HARUS ditinjau ulang — di situlah sandi bersama berubah jadi jalan masuk
+# lintas-mitra.
 #
-# Akses tetap NOC TIDAK bergantung pada baris ini: itu kunci SSH di
-# /root/.ssh/authorized_keys (A3), yang selamat walau mitra mengganti sandinya
-# sendiri. Yang dijaga di sini hanya satu hal — jangan pernah ada paksaan ganti
-# sandi yang tak diminta siapa pun.
+# Yang tetap dikerjakan: mematikan umur sandi, supaya tidak ada yang pernah
+# dipaksa mengganti sandi di login pertama. Sandi yang kedaluwarsa memaksa
+# mitra membuat sandi baru, dan sejak detik itu sandi yang dipegang NOC mati
+# sementara penggantinya tak tercatat di mana pun — appliance jadi kotak hitam
+# justru saat ia bermasalah. install-appliance.sh sudah melakukannya di golden
+# image; diulang di sini karena imagenya bisa saja dibangun sebelum baris itu
+# ada.
 chage -M -1 -I -1 -E -1 -d "$(date +%Y-%m-%d)" root || {
   echo "PERINGATAN: gagal mematikan umur sandi root — periksa chage/login.defs" >&2
 }
@@ -188,19 +166,23 @@ chage -M -1 -I -1 -E -1 -d "$(date +%Y-%m-%d)" root || {
 # ---- 6. Ringkasan di layar konsol ------------------------------------------
 #
 # Ditulis ke /etc/issue supaya terbaca LANGSUNG di layar konsol Proxmox,
-# sebelum login. Mode 600: agetty membacanya sebagai root, jadi tak ada yang
-# hilang, sementara pengguna lain di dalam VM tidak ikut membaca sandinya.
+# sebelum login. Tidak ada rahasia di dalamnya lagi sejak sandi tak dibangkitkan
+# (langkah 5), jadi modenya 644 seperti berkas ini pada umumnya.
+#
+# Gunanya tetap sama dan tetap penting: tanpa ini mitra melihat prompt `login:`
+# polos dan berhenti di situ, tanpa tahu appliance-nya sudah siap atau belum.
 install -d -m 755 /var/lib/radius-appliance
-cat > /etc/issue <<EOF
+cat > /etc/issue <<'EOF'
 
   Appliance RADIUS — Netovas
   --------------------------
   Stack sudah berjalan. Appliance ini BELUM tersambung ke ERP.
 
-  MASUK DI SINI:   login: root     sandi: ${SANDI_ROOT}
-  (sandi ini sudah siap pakai — Anda TIDAK akan diminta menggantinya.
-   NOC memegang salinannya; beri tahu NOC lebih dulu kalau tetap diganti,
-   kalau tidak kami tak bisa menolong appliance ini dari jarak jauh)
+  MASUK DI SINI:   login: root
+  Sandinya ada di lembar kredensial yang dikirim NOC bersama berkas OVA —
+  sama untuk setiap appliance, dan Anda TIDAK akan diminta menggantinya.
+  Beri tahu NOC lebih dulu kalau tetap diganti, kalau tidak kami tak bisa
+  menolong appliance ini dari jarak jauh.
 
   Lalu daftarkan appliance ini di ERP (Infrastruktur > RADIUS > Tambah),
   salin satu baris perintah yang muncul di layar ERP, dan tempel di sini
@@ -208,6 +190,6 @@ cat > /etc/issue <<EOF
   layar ini.
 
 EOF
-chmod 600 /etc/issue
+chmod 644 /etc/issue
 date -Is > "$TANDA"
 echo "firstboot selesai."
