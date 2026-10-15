@@ -25,8 +25,13 @@ yang sedang berjalan.
 ## Yang dijalankan mitra: SATU baris
 
 ```
-radius-erp-enroll <host-conc> <user-ppp> <sandi-ppp> <pool-nas> <api-user> <api-key> <port-api>
+sudo radius-erp-enroll <host-conc> <user-ppp> <sandi-ppp> <pool-nas> <api-user> <api-key> <port-api>
 ```
+
+`sudo` BAGIAN DARI BARISNYA, bukan tambahan dari dokumen ini: `radius-erp-enroll`
+ada di `/usr/local/sbin`, yang tidak ada di PATH pengguna biasa Debian, dan sejak
+15 Okt mitra boleh masuk sebagai pengguna ber-sudo. Backend yang menyusunnya sudah
+mengawali dengan `sudo` (`PerintahEnroll`) — jangan dibuang, jangan ditambah lagi.
 
 Barisnya **disalin utuh** dari panel "Sambungkan appliance" di ERP — tidak
 dirangkai tangan, dan tidak ada nilai apa pun yang perlu dibaca dari konsol
@@ -46,8 +51,9 @@ antara boot pertama dan enroll.
 
 ## Mencobanya di lab (berperan sebagai mitra)
 
-Appliance sungguhan: ketiga skrip ada di `/usr/local/sbin` (dipasang
-`install-appliance.sh` saat golden image dibuat), stack-nya di
+Appliance sungguhan: keempat skrip ada di `/usr/local/sbin` (`firstboot.sh`,
+`radius-erp-enroll`, `radius-vpn-connect`, `radius-vpn-watchdog` — dipasang
+`install-appliance.sh` saat golden image dibuat, bersama ketiga unit systemd), stack-nya di
 `/opt/freeradius-api`, dan `.env`-nya dibuat `firstboot.sh` pada boot pertama.
 Mitra tinggal menempelkan satu baris dari ERP.
 
@@ -185,9 +191,17 @@ cd /opt/freeradius-api
 ./setup.sh                        # bootstrap raddb dari image FreeRADIUS
 docker compose build              # image api DIBANGUN SEKARANG
 docker compose pull db freeradius  # image dasar ikut ter-cache
-apt install -y xl2tpd curl openssl qemu-guest-agent
-./appliance/install-appliance.sh
+apt install -y xl2tpd curl openssl qemu-guest-agent sudo
+NOC_SSH_FROM="<cidr-noc>" AKUN_MITRA=<user> ./appliance/install-appliance.sh
 ```
+
+`NOC_SSH_FROM` mempersempit dari mana sandi root berlaku lewat SSH. Dikosongkan
+tetap boleh dan installer hanya memperingatkan — tapi sandi root SAMA di semua
+appliance, jadi tanpa pembatas itu ia berlaku dari seluruh ruang alamat tunnel,
+termasuk dari appliance mitra lain. `AKUN_MITRA=<user>` dipakai kalau mitra akan
+masuk sebagai pengguna biasa: ia menjalankan `usermod -aG sudo` lalu
+memverifikasinya (grup `sudo` TIDAK otomatis di Debian saat sandi root diisi).
+Keduanya opsional; `sudo` di baris `apt` tidak.
 
 `docker compose build` wajib di sini, bukan di tempat mitra: build menuntut
 jaringan yang sehat (registry, dl-cdn Alpine, proxy modul Go), dan jaringan

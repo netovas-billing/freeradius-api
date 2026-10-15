@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # install-appliance.sh — DIJALANKAN NOC SEKALI di golden image (langkah A1).
 #
-# Memasang tiga skrip + satu unit systemd ke dalam image. Sesudah ini, mitra
+# Memasang empat skrip + tiga unit systemd ke dalam image. Sesudah ini, mitra
 # tidak menjalankan apa pun selain SATU baris radius-erp-enroll dari layar ERP.
 #
 # Idempoten: aman dijalankan ulang saat image diperbarui.
@@ -120,12 +120,13 @@ fi
 # DUA jalur ditutup di sini, karena keduanya menghasilkan paksaan yang sama
 # tapi lewat kolom /etc/shadow yang berbeda:
 #
-#   1. `chage`/`passwd --expire` pada akun root → kolom lastchg. Ini yang
-#      tersembuhkan `chpasswd` di firstboot, jadi mitra tak terkena — tapi NOC
-#      di VM ini terkena, dan itu yang terjadi selama ini.
-#   2. PASS_MAX_DAYS di /etc/login.defs → kolom max. Ini TIDAK tersembuhkan
-#      `chpasswd`, dan ia mewarisi ke setiap akun yang sandinya ditetapkan
-#      sesudahnya. Appliance mitra akan jalan normal berbulan-bulan lalu
+#   1. `chage`/`passwd --expire` pada akun root → kolom lastchg. Dulu ini
+#      tersembuhkan `chpasswd` di firstboot — tapi firstboot TIDAK LAGI
+#      menanam sandi apa pun (8ccfda5), jadi tak ada lagi yang menyembuhkannya
+#      selain `chage` yang diulang firstboot.sh. Jangan cari `chpasswd` di
+#      repo ini: sudah tidak ada.
+#   2. PASS_MAX_DAYS di /etc/login.defs → kolom max. Hanya disetel -1 DI SINI,
+#      dan ia mewarisi ke setiap akun yang sandinya ditetapkan sesudahnya. Appliance mitra akan jalan normal berbulan-bulan lalu
 #      tiba-tiba memaksa ganti sandi, tanpa sebab yang kelihatan.
 #
 # firstboot.sh mengulang `chage` untuk akun root di tempat mitra (ia TIDAK lagi

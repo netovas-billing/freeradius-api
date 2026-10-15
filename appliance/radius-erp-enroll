@@ -24,7 +24,7 @@ pakai: radius-erp-enroll <host-conc> <user-ppp> <sandi-ppp> <pool-nas> <api-user
 
 Jangan dirangkai tangan. Salin barisnya UTUH dari layar ERP
 (Infrastruktur > RADIUS > Tambah, panel "Sambungkan appliance").
-Jumlah argumen yang tidak enam biasanya berarti barisnya terpotong saat
+Jumlah argumen yang bukan TUJUH biasanya berarti barisnya terpotong saat
 disalin — salin ulang, jangan ditambal.
 USAGE
   exit 2
