@@ -1,5 +1,5 @@
 [Unit]
-Description=Appliance RADIUS — boot pertama (kredensial unik per mitra)
+Description=Appliance RADIUS — boot pertama (kredensial DB/.env per appliance)
 # Docker WAJIB sudah siap: firstboot menjalankan `docker compose up -d`, dan
 # tanpa After= ia berlomba dengan dockerd lalu gagal dengan "cannot connect to
 # the Docker daemon" — di boot PERTAMA, satu-satunya yang menentukan.

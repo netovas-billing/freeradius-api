@@ -142,15 +142,18 @@ docker compose up -d
 # layar. Menit-menit pertama appliance baru justru menit paling sering dipakai
 # untuk memeriksanya.
 #
-# Yang hilang karena ini: sandi root sama di semua appliance. Yang menahan
-# akibatnya: sshd Debian berjalan `PermitRootLogin prohibit-password`, jadi
-# sandi itu TIDAK bisa dipakai dari jauh — termasuk oleh sesama mitra lewat
-# ruang alamat tunnel yang sama. Ia hanya berlaku di konsol hypervisor mitra
-# sendiri, tempat yang toh sudah bisa memasang disk VM ini dan membacanya
-# tanpa sandi apa pun. Akses NOC dari jauh berjalan lewat kunci SSH, bukan
-# sandi ini. Kalau kelak `PermitRootLogin` dilonggarkan jadi `yes`, keputusan
-# ini HARUS ditinjau ulang — di situlah sandi bersama berubah jadi jalan masuk
-# lintas-mitra.
+# Yang hilang karena ini: sandi root sama di semua appliance. Dan yang dulu
+# menahan akibatnya — `PermitRootLogin prohibit-password` bawaan Debian, yang
+# membuat sandi itu hanya berlaku di konsol hypervisor mitra sendiri — sudah
+# TIDAK berlaku lagi: install-appliance.sh menimpanya jadi `PermitRootLogin yes`
+# atas permintaan pemilik sore yang sama ("dengan ssh harusnya masih bisa
+# dengan password walaupun login sebagai root").
+#
+# Jadi jangan membaca blok ini sebagai "aman karena sandinya cuma di konsol".
+# Semua appliance duduk di satu ruang alamat tunnel, jadi mitra mana pun yang
+# membaca sandi di appliance-nya sendiri bisa SSH sebagai root ke appliance
+# mitra lain. Satu-satunya yang menahannya sekarang adalah NOC_SSH_FROM di
+# install-appliance.sh — dan kalau ia dikosongkan, tidak ada yang menahannya.
 #
 # Yang tetap dikerjakan: mematikan umur sandi, supaya tidak ada yang pernah
 # dipaksa mengganti sandi di login pertama. Sandi yang kedaluwarsa memaksa

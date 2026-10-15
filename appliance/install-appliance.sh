@@ -128,8 +128,9 @@ fi
 #      sesudahnya. Appliance mitra akan jalan normal berbulan-bulan lalu
 #      tiba-tiba memaksa ganti sandi, tanpa sebab yang kelihatan.
 #
-# firstboot.sh mengulang `chage` untuk akun root sesudah menanam sandi unik.
-# Yang di sini mengurus imagenya sendiri — dan bawaan distronya.
+# firstboot.sh mengulang `chage` untuk akun root di tempat mitra (ia TIDAK lagi
+# menanam sandi apa pun sejak 15 Okt). Yang di sini mengurus imagenya sendiri —
+# dan bawaan distronya.
 chage -M -1 -I -1 -E -1 -d "$(date +%Y-%m-%d)" root || \
   echo "PERINGATAN: gagal mematikan umur sandi root di image ini" >&2
 
