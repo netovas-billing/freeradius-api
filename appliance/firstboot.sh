@@ -166,19 +166,34 @@ chage -M -1 -I -1 -E -1 -d "$(date +%Y-%m-%d)" root || {
 # ---- 6. Ringkasan di layar konsol ------------------------------------------
 #
 # Ditulis ke /etc/issue supaya terbaca LANGSUNG di layar konsol Proxmox,
-# sebelum login. Tidak ada rahasia di dalamnya lagi sejak sandi tak dibangkitkan
-# (langkah 5), jadi modenya 644 seperti berkas ini pada umumnya.
+# sebelum login. Tidak ada rahasia di dalamnya (sandi tidak dibangkitkan —
+# langkah 5), jadi modenya 644 seperti berkas ini pada umumnya.
 #
-# Gunanya tetap sama dan tetap penting: tanpa ini mitra melihat prompt `login:`
-# polos dan berhenti di situ, tanpa tahu appliance-nya sudah siap atau belum.
+# Gunanya tetap penting: tanpa ini mitra melihat prompt `login:` polos dan
+# berhenti di situ, tanpa tahu appliance-nya sudah siap atau belum.
+#
+# AKUNNYA DIBACA, BUKAN DITEBAK. NOC boleh memilih mitra masuk sebagai root,
+# boleh juga sebagai pengguna biasa yang ber-sudo, dan pilihan itu dibuat saat
+# memasang Debian — jauh dari berkas ini. Layar yang menyebut akun yang salah
+# lebih buruk daripada layar yang tidak menyebut apa-apa: mitra mengetik nama
+# yang tidak ada, ditolak, dan menyimpulkan appliance-nya rusak.
+#
+# Yang dicari: pengguna ber-UID >= 1000 dengan shell sungguhan yang anggota
+# grup sudo. Kalau ada lebih dari satu, yang pertama dipakai — dan kalau tidak
+# ada sama sekali, root.
+AKUN="root"
+for u in $(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd); do
+  if id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx sudo; then AKUN="$u"; break; fi
+done
+
 install -d -m 755 /var/lib/radius-appliance
-cat > /etc/issue <<'EOF'
+cat > /etc/issue <<EOF
 
   Appliance RADIUS — Netovas
   --------------------------
   Stack sudah berjalan. Appliance ini BELUM tersambung ke ERP.
 
-  MASUK DI SINI:   login: root
+  MASUK DI SINI:   login: ${AKUN}
   Sandinya ada di lembar kredensial yang dikirim NOC bersama berkas OVA —
   sama untuk setiap appliance, dan Anda TIDAK akan diminta menggantinya.
   Beri tahu NOC lebih dulu kalau tetap diganti, kalau tidak kami tak bisa
@@ -186,8 +201,9 @@ cat > /etc/issue <<'EOF'
 
   Lalu daftarkan appliance ini di ERP (Infrastruktur > RADIUS > Tambah),
   salin satu baris perintah yang muncul di layar ERP, dan tempel di sini
-  lewat Console > xterm.js. Tidak ada nilai lain yang perlu dibaca dari
-  layar ini.
+  lewat Console > xterm.js. Barisnya sudah berawalan \`sudo\` — tempel apa
+  adanya, jangan ditambah apa pun. Tidak ada nilai lain yang perlu dibaca
+  dari layar ini.
 
 EOF
 chmod 644 /etc/issue

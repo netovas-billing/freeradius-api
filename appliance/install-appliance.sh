@@ -96,7 +96,7 @@ fi
 # dapat alamat IP VM tampil di ringkasan Proxmox — justru nilai yang ia butuhkan
 # saat mendaftarkan appliance.
 kurang=""
-for paket in xl2tpd curl openssl qemu-guest-agent; do
+for paket in xl2tpd curl openssl qemu-guest-agent sudo; do
   command -v "$paket" >/dev/null 2>&1 || dpkg -s "$paket" >/dev/null 2>&1 || kurang="$kurang $paket"
 done
 if [ -n "$kurang" ]; then
@@ -138,6 +138,31 @@ if [ -f /etc/login.defs ] && grep -qE '^[[:space:]]*PASS_MAX_DAYS[[:space:]]+[0-
   echo "PASS_MAX_DAYS di /etc/login.defs disetel -1 (tanpa kedaluwarsa)."
 fi
 
+# ---- Akun yang dipakai mitra untuk masuk -----------------------------------
+#
+# Mitra boleh masuk sebagai root, boleh juga sebagai pengguna biasa yang
+# ber-sudo. Yang menentukan adalah NOC saat memasang Debian di image ini —
+# bukan skrip ini, karena sandinya pun ditetapkan di sana.
+#
+# Yang DIPERIKSA di sini cuma satu hal: kalau NOC memilih jalur pengguna biasa,
+# pengguna itu harus benar-benar bisa sudo. Baris enroll dari ERP berawalan
+# `sudo`, jadi pengguna yang tidak ber-sudo akan menempel baris yang benar lalu
+# ditolak — dan penolakannya terjadi di tempat mitra, bukan di lab.
+manusia="$(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}' /etc/passwd)"
+if [ -n "$manusia" ]; then
+  for u in $manusia; do
+    if id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx sudo; then
+      echo "Akun login mitra: $u (anggota grup sudo) — siap."
+    else
+      echo "PERINGATAN: pengguna '$u' ADA tapi tidak di grup sudo." >&2
+      echo "  Kalau dia yang akan dipakai mitra: usermod -aG sudo $u" >&2
+      echo "  Kalau mitra memakai root saja, abaikan." >&2
+    fi
+  done
+else
+  echo "Tidak ada pengguna biasa — mitra akan masuk sebagai root."
+fi
+
 systemctl daemon-reload
 systemctl enable radius-appliance-firstboot.service
 # TIMER-nya yang di-enable, bukan servicenya: meng-enable unit oneshot membuat
@@ -166,9 +191,10 @@ Sisa langkah A1 sebelum sanitasi:
   2. docker compose build                 # image api DIBANGUN SEKARANG — mitra
                                           # bisa saja tanpa egress ke registry
   3. docker compose pull db freeradius    # image dasar ikut ter-cache
-  4. apt install -y xl2tpd curl openssl qemu-guest-agent
+  4. apt install -y xl2tpd curl openssl qemu-guest-agent sudo
                                           # xl2tpd/curl/openssl: radius-vpn-connect
                                           # qemu-guest-agent: Proxmox mitra butuhnya
+                                          # sudo: baris enroll dari ERP berawalan sudo
 
 JANGAN jalankan firstboot.sh di lab: ia menandai dirinya selesai, dan tanda itu
 ikut ke dalam OVA sehingga appliance mitra lahir TANPA kredensial unik.
