@@ -105,6 +105,39 @@ if [ -n "$kurang" ]; then
   echo "Tanpa qemu-guest-agent, JANGAN suruh mitra mencentang QEMU Guest Agent." >&2
 fi
 
+# ---- Jangan pernah ada paksaan ganti sandi root ---------------------------
+#
+# Berlaku untuk DUA orang, bukan satu. NOC login ke VM golden image ini untuk
+# membangun dan mengujinya; mitra login ke appliance hasilnya. Keduanya harus
+# langsung mendapat prompt perintah, bukan permintaan sandi baru.
+#
+# Kalau sandi root kedaluwarsa, PAM memaksa gantinya di login pertama — dan
+# bagi mitra itu berarti sandi yang dipegang NOC mati sejak detik itu,
+# sementara nilai penggantinya tidak tercatat di mana pun. Appliance jadi kotak
+# hitam justru pada saat ia bermasalah dan perlu ditelusuri. Gejalanya pun
+# bukan galat: login berhasil, diminta sandi baru, selesai.
+#
+# DUA jalur ditutup di sini, karena keduanya menghasilkan paksaan yang sama
+# tapi lewat kolom /etc/shadow yang berbeda:
+#
+#   1. `chage`/`passwd --expire` pada akun root → kolom lastchg. Ini yang
+#      tersembuhkan `chpasswd` di firstboot, jadi mitra tak terkena — tapi NOC
+#      di VM ini terkena, dan itu yang terjadi selama ini.
+#   2. PASS_MAX_DAYS di /etc/login.defs → kolom max. Ini TIDAK tersembuhkan
+#      `chpasswd`, dan ia mewarisi ke setiap akun yang sandinya ditetapkan
+#      sesudahnya. Appliance mitra akan jalan normal berbulan-bulan lalu
+#      tiba-tiba memaksa ganti sandi, tanpa sebab yang kelihatan.
+#
+# firstboot.sh mengulang `chage` untuk akun root sesudah menanam sandi unik.
+# Yang di sini mengurus imagenya sendiri — dan bawaan distronya.
+chage -M -1 -I -1 -E -1 -d "$(date +%Y-%m-%d)" root || \
+  echo "PERINGATAN: gagal mematikan umur sandi root di image ini" >&2
+
+if [ -f /etc/login.defs ] && grep -qE '^[[:space:]]*PASS_MAX_DAYS[[:space:]]+[0-9]+' /etc/login.defs; then
+  sed -i -E 's|^([[:space:]]*PASS_MAX_DAYS[[:space:]]+).*|\1-1|' /etc/login.defs
+  echo "PASS_MAX_DAYS di /etc/login.defs disetel -1 (tanpa kedaluwarsa)."
+fi
+
 systemctl daemon-reload
 systemctl enable radius-appliance-firstboot.service
 # TIMER-nya yang di-enable, bukan servicenya: meng-enable unit oneshot membuat
@@ -122,6 +155,11 @@ Terpasang:
   /usr/local/sbin/radius-vpn-watchdog
   radius-appliance-firstboot.service (enabled, belum dijalankan)
   radius-vpn-watchdog.timer (enabled — diam sampai appliance di-enroll)
+
+Umur sandi root dimatikan di image ini: NOC maupun mitra tidak akan pernah
+diminta mengganti sandi saat login pertama. JANGAN tambahkan
+`passwd --expire root` di sanitasi (A3) — itu menghidupkannya lagi, dan sandi
+yang dipegang NOC mati pada login pertama mitra.
 
 Sisa langkah A1 sebelum sanitasi:
   1. cd ${STACK_DIR} && ./setup.sh        # bootstrap raddb dari image FreeRADIUS
