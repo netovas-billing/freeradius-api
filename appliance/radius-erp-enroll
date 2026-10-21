@@ -101,6 +101,19 @@ chmod 600 "$ENV_FILE"
 DOCKER_NET="$(dirname "$(readlink -f "$0")")/radius-docker-net"
 [ -x "$DOCKER_NET" ] || DOCKER_NET="$(command -v radius-docker-net || true)"
 if [ -n "$DOCKER_NET" ]; then
+  # LAN mitra di 172.16.0.0/12 DITOLAK sebelum apa pun diubah: ERP tak bisa
+  # memindahkannya, dan kalau dibiarkan rute LAN mengalahkan rute tunnel —
+  # API tak terjangkau dan auth NAS gagal tanpa satu pun galat.
+  # shellcheck source=radius-docker-net
+  LAN_BENTROK="$( source "$DOCKER_NET"; lan_bentrok )"
+  if [ -n "$LAN_BENTROK" ]; then
+    echo "GAGAL: LAN appliance ini memakai alamat di 172.16.0.0–172.31.255.255:" >&2
+    echo "$LAN_BENTROK" | sed 's/^/  /' >&2
+    echo "Rentang itu KHUSUS jalur VPN concentrator (pool NAS + alamat RADIUS)." >&2
+    echo "Pindahkan appliance ke LAN lain (mis. 192.168.x.x atau 10.x.x.x)," >&2
+    echo "atau ubah alamat LAN-nya, lalu jalankan ulang baris ini. Belum ada yang diubah." >&2
+    exit 1
+  fi
   echo "memeriksa jaringan Docker ..."
   STACK_DIR="$STACK_DIR" "$DOCKER_NET"
 else

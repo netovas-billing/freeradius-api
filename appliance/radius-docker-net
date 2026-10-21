@@ -77,6 +77,29 @@ subnet_bentrok() {
   done < <(subnet_docker)
 }
 
+# lan_bentrok — alamat IPv4 di interface FISIK/LAN appliance yang jatuh di
+# 172.16.0.0/12 ("<iface> <cidr>" per baris). Interface yang memang milik
+# jalur VPN / Docker (ppp*, docker0, br-*, veth*, lo) dilewati.
+#
+# LAN mitra adalah satu-satunya yang ERP tak bisa atur. LAN di 172.16–172.31
+# bentrok dengan alamat appliance (172.16.x) atau pool NAS concentrator, dan
+# gejalanya sama bisunya dengan kasus Docker: rute ke tunnel kalah oleh rute
+# LAN, tanpa galat di mana pun.
+lan_bentrok() {
+  local iface cidr
+  while read -r iface cidr; do
+    case "$iface" in lo|ppp*|docker*|br-*|veth*) continue ;; esac
+    if dalam_ruang_manajemen "$cidr"; then
+      echo "$iface $cidr"
+    fi
+  done < <(alamat_lan)
+}
+
+# alamat_lan — "<iface> <cidr>" untuk tiap alamat IPv4 global.
+alamat_lan() {
+  ip -4 -o addr show scope global 2>/dev/null | awk '{print $2, $4}'
+}
+
 tulis_daemon_json() {
   install -d -m 755 "$(dirname "$DAEMON_JSON")"
   cat >"$DAEMON_JSON" <<EOF

@@ -90,4 +90,12 @@ JARINGAN="bridge 172.17.0.0/16"
 main --periksa >/dev/null 2>&1; rc=$?
 cek "--periksa bentrok → 1" '[ "$rc" = 1 ] && [ ! -f "$DAEMON_JSON" ]'
 
+# LAN mitra di 172.16/12 → terdeteksi; ppp/docker/br/veth diabaikan.
+alamat_lan() { printf '%s\n' "ens18 192.168.10.56/24" "ppp1 172.16.0.1/32" "docker0 172.17.0.1/16" "br-x 172.18.0.1/16" "veth9 172.19.0.1/16"; }
+cek "LAN 192.168 + jalur VPN/Docker → tak bentrok" '[ -z "$(lan_bentrok)" ]'
+alamat_lan() { printf '%s\n' "ens18 172.16.5.20/24" "ppp1 172.16.0.1/32"; }
+cek "LAN 172.16.5.0/24 → bentrok" '[ "$(lan_bentrok)" = "ens18 172.16.5.20/24" ]'
+alamat_lan() { printf '%s\n' "eth0 172.31.0.10/16"; }
+cek "LAN 172.31.x → bentrok" '[ -n "$(lan_bentrok)" ]'
+
 exit $gagal
