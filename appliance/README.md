@@ -214,11 +214,12 @@ sudah berisi hal lain TIDAK ditimpa; skripnya berhenti dan menyebut dua kunci ya
 harus ditambahkan. Periksa saja: `sudo radius-docker-net --periksa`.
 Uji: `bash appliance/test-radius-docker-net.sh`.
 
-**LAN mitra juga tidak boleh di 172.16.0.0/12.** Itu satu-satunya yang ERP tak
-bisa atur: rute LAN akan mengalahkan rute tunnel dengan gejala yang sama bisunya.
-`radius-erp-enroll` menolaknya SEBELUM mengubah apa pun dan menyebut interface +
-alamatnya — appliance harus dipindah ke LAN lain (192.168.x.x / 10.x.x.x) atau
-alamat LAN-nya diganti.
+**LAN mitra tidak boleh BERIRISAN dengan jalur VPN** — pool NAS concentrator
+(argumen ke-4 baris enroll) atau ruang alamat RADIUS 172.16.0.0/16. Itu
+satu-satunya yang ERP tak bisa atur: rute LAN akan mengalahkan rute tunnel dengan
+gejala yang sama bisunya. `radius-erp-enroll` menolaknya SEBELUM mengubah apa pun.
+LAN lain di 172.16.0.0/12 yang tidak beririsan hanya diperingatkan (sah, tapi
+rawan kalau pool concentrator kelak berubah).
 
 ## Urutan di golden image (A1)
 

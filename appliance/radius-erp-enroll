@@ -105,14 +105,20 @@ if [ -n "$DOCKER_NET" ]; then
   # memindahkannya, dan kalau dibiarkan rute LAN mengalahkan rute tunnel —
   # API tak terjangkau dan auth NAS gagal tanpa satu pun galat.
   # shellcheck source=radius-docker-net
-  LAN_BENTROK="$( source "$DOCKER_NET"; lan_bentrok )"
+  LAN_BENTROK="$( source "$DOCKER_NET"; lan_bentrok "$POOL_NAS" )"
   if [ -n "$LAN_BENTROK" ]; then
-    echo "GAGAL: LAN appliance ini memakai alamat di 172.16.0.0–172.31.255.255:" >&2
+    echo "GAGAL: LAN appliance ini BERIRISAN dengan jalur VPN concentrator" >&2
+    echo "  (pool NAS $POOL_NAS / alamat RADIUS 172.16.0.0/16):" >&2
     echo "$LAN_BENTROK" | sed 's/^/  /' >&2
-    echo "Rentang itu KHUSUS jalur VPN concentrator (pool NAS + alamat RADIUS)." >&2
     echo "Pindahkan appliance ke LAN lain (mis. 192.168.x.x atau 10.x.x.x)," >&2
     echo "atau ubah alamat LAN-nya, lalu jalankan ulang baris ini. Belum ada yang diubah." >&2
     exit 1
+  fi
+  LAN_RAWAN="$( source "$DOCKER_NET"; lan_rawan "$POOL_NAS" )"
+  if [ -n "$LAN_RAWAN" ]; then
+    echo "PERINGATAN: LAN ini di 172.16.0.0/12 (ruang VPN). Aman untuk pool $POOL_NAS," >&2
+    echo "  tapi akan bentrok kalau concentrator kelak memakai pool yang mencakupnya:" >&2
+    echo "$LAN_RAWAN" | sed 's/^/  /' >&2
   fi
   echo "memeriksa jaringan Docker ..."
   STACK_DIR="$STACK_DIR" "$DOCKER_NET"
