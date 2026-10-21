@@ -21,6 +21,7 @@ install -m 700 firstboot.sh          /usr/local/sbin/firstboot.sh
 install -m 755 radius-vpn-connect    /usr/local/sbin/radius-vpn-connect
 install -m 755 radius-erp-enroll     /usr/local/sbin/radius-erp-enroll
 install -m 755 radius-vpn-watchdog   /usr/local/sbin/radius-vpn-watchdog
+install -m 755 radius-docker-net     /usr/local/sbin/radius-docker-net
 install -m 644 radius-appliance-firstboot.service \
   /etc/systemd/system/radius-appliance-firstboot.service
 install -m 644 radius-vpn-watchdog.service /etc/systemd/system/radius-vpn-watchdog.service
@@ -270,6 +271,16 @@ case "$(passwd -S root 2>/dev/null | awk '{print $2}')" in
     ;;
 esac
 
+# ---- Jaringan Docker DI LUAR 172.16.0.0/12 --------------------------------
+#
+# Bawaan Docker (docker0 172.17/16, compose 172.18/16, …) = ruang manajemen
+# VPN concentrator: pool NAS /17 di 172.17–172.31 bergateway .1. Appliance lalu
+# menganggap gateway pool alamatnya SENDIRI — REST API tak terjangkau dari ERP
+# dan balasan auth RADIUS ke NAS nyasar ke docker0. Kejadian staging JKT-1,
+# 21 Okt 2026. Dipasang DI SINI supaya setiap OVA lahir benar; radius-erp-
+# enroll menjalankan pemeriksaan yang sama untuk appliance dari OVA lama.
+STACK_DIR="$STACK_DIR" /usr/local/sbin/radius-docker-net
+
 systemctl daemon-reload
 systemctl enable radius-appliance-firstboot.service
 # TIMER-nya yang di-enable, bukan servicenya: meng-enable unit oneshot membuat
@@ -285,6 +296,7 @@ Terpasang:
   /usr/local/sbin/radius-vpn-connect
   /usr/local/sbin/radius-erp-enroll
   /usr/local/sbin/radius-vpn-watchdog
+  /usr/local/sbin/radius-docker-net     (Docker di 198.18.0.0/15, bukan 172.16/12)
   radius-appliance-firstboot.service (enabled, belum dijalankan)
   radius-vpn-watchdog.timer (enabled — diam sampai appliance di-enroll)
 

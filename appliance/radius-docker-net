@@ -1,0 +1,159 @@
+#!/usr/bin/env bash
+# radius-docker-net — pastikan jaringan Docker appliance TIDAK memakai
+# 172.16.0.0/12.
+#
+# KENAPA (staging JKT-1, 21 Okt 2026): bawaan Docker = docker0 172.17.0.0/16,
+# jaringan compose 172.18/16, 172.19/16, … Itu persis ruang manajemen VPN
+# concentrator: pool NAS /17 di 172.17–172.31 dengan gateway .1, alamat
+# appliance di 172.16/16. Akibatnya gateway pool (172.17.0.1) terbaca sebagai
+# alamat LOKAL appliance (`ip route get 172.17.0.1` → `local … dev lo`):
+#
+#   - paket dari concentrator bersumber 172.17.0.1 dibuang kernel sebagai
+#     martian — REST API tak terjangkau dari ERP, tanpa satu pun log;
+#   - balasan auth RADIUS ke NAS di 172.17.x dirutekan ke docker0, bukan ke
+#     tunnel — SELURUH login pelanggan di concentrator itu gagal.
+#
+# Dari router semuanya tampak benar (dst-nat, srcnat, forward ber-counter
+# naik, tunnel naik) dan dari dalam appliance API menjawab 401. Yang
+# membedakan hanya tcpdump: SYN masuk di ppp*, tak ada SYN-ACK keluar.
+#
+# Rentang pengganti 198.18.0.0/15 (RFC 2544, khusus uji): tak pernah dirutekan
+# di internet dan tak bentrok dengan 172.16/12 (manajemen), 10/8 (pelanggan),
+# maupun 192.168/16 (LAN mitra).
+#
+# Dipakai DUA jalur, sengaja satu skrip: install-appliance.sh (golden image
+# baru) dan radius-erp-enroll (appliance dari OVA lama ikut beres saat
+# di-enroll). Dua salinan berarti suatu hari keduanya berselisih.
+#
+# Idempoten. Mode:
+#   radius-docker-net            pastikan + perbaiki (bisa me-restart Docker
+#                                 dan membuat ulang stack — volume DB AMAN)
+#   radius-docker-net --periksa  hanya laporkan; keluar 1 kalau bentrok
+set -euo pipefail
+
+STACK_DIR="${STACK_DIR:-/opt/freeradius-api}"
+DAEMON_JSON="${DAEMON_JSON:-/etc/docker/daemon.json}"
+BIP="198.18.0.1/24"
+POOL_BASE="198.19.0.0/16"
+
+# dalam_ruang_manajemen <cidr|ip> — benar kalau alamatnya di 172.16.0.0/12.
+dalam_ruang_manajemen() {
+  local a="${1%%/*}" o1 o2
+  IFS=. read -r o1 o2 _ _ <<<"$a"
+  [ "${o1:-}" = "172" ] && [ "${o2:-0}" -ge 16 ] 2>/dev/null && [ "${o2:-0}" -le 31 ]
+}
+
+# daemon_json_sesuai — 0 sesuai, 1 belum ada, 2 ada tapi BERBEDA.
+daemon_json_sesuai() {
+  [ -s "$DAEMON_JSON" ] || return 1
+  if grep -q "\"$BIP\"" "$DAEMON_JSON" && grep -q "\"$POOL_BASE\"" "$DAEMON_JSON"; then
+    return 0
+  fi
+  return 2
+}
+
+# subnet_docker — semua subnet IPv4 jaringan Docker yang ada sekarang.
+subnet_docker() {
+  command -v docker >/dev/null 2>&1 || return 0
+  local ids
+  ids="$(docker network ls -q 2>/dev/null || true)"
+  [ -n "$ids" ] || return 0
+  # shellcheck disable=SC2086
+  docker network inspect $ids \
+    --format '{{.Name}} {{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null || true
+}
+
+# subnet_bentrok — baris "<nama> <subnet>" untuk tiap subnet di 172.16/12.
+subnet_bentrok() {
+  local nama s
+  while read -r nama rest; do
+    [ -n "${nama:-}" ] || continue
+    for s in $rest; do
+      case "$s" in *:*) continue ;; esac # IPv6
+      if dalam_ruang_manajemen "$s"; then
+        echo "$nama $s"
+      fi
+    done
+  done < <(subnet_docker)
+}
+
+tulis_daemon_json() {
+  install -d -m 755 "$(dirname "$DAEMON_JSON")"
+  cat >"$DAEMON_JSON" <<EOF
+{
+  "bip": "$BIP",
+  "default-address-pools": [{ "base": "$POOL_BASE", "size": 24 }]
+}
+EOF
+}
+
+main() {
+  local mode="${1:-}"
+  local sesuai=0
+  daemon_json_sesuai || sesuai=$?
+  local bentrok
+  bentrok="$(subnet_bentrok)"
+
+  if [ "$mode" = "--periksa" ]; then
+    [ "$sesuai" = 0 ] || echo "daemon.json belum memindahkan jaringan Docker dari 172.16.0.0/12" >&2
+    [ -z "$bentrok" ] || { echo "jaringan Docker di ruang manajemen VPN:" >&2; echo "$bentrok" >&2; }
+    [ "$sesuai" = 0 ] && [ -z "$bentrok" ]
+    return
+  fi
+
+  case "$sesuai" in
+    0) ;;
+    1)
+      echo "memindahkan jaringan Docker ke 198.18.0.0/15 (bawaan 172.17/16 bentrok dengan pool VPN) ..."
+      tulis_daemon_json
+      ;;
+    2)
+      # TIDAK ditimpa: berkas itu milik orang lain (registry mirror, log
+      # driver, …). Menimpanya diam-diam mematikan hal yang tak kita kenal.
+      echo "GAGAL: $DAEMON_JSON sudah ada dengan isi lain." >&2
+      echo "Tambahkan dua kunci ini ke dalamnya, lalu ulangi:" >&2
+      echo "  \"bip\": \"$BIP\"," >&2
+      echo "  \"default-address-pools\": [{ \"base\": \"$POOL_BASE\", \"size\": 24 }]" >&2
+      return 1
+      ;;
+  esac
+
+  if [ "$sesuai" = 0 ] && [ -z "$bentrok" ]; then
+    return 0
+  fi
+
+  # Docker hanya membaca bip/pool saat START, dan jaringan compose yang
+  # sudah ada TIDAK ikut pindah — harus dibuat ulang. `down` TANPA -v:
+  # volume database RADIUS tidak boleh ikut hilang.
+  # Docker belum terpasang (golden image sebelum apt install docker): cukup
+  # daemon.json — Docker membacanya saat start pertama, dan belum ada jaringan
+  # apa pun yang perlu dipindah.
+  if ! command -v docker >/dev/null 2>&1; then
+    echo "Docker belum terpasang — daemon.json sudah disiapkan untuk start pertamanya."
+    return 0
+  fi
+  local ada_stack=0
+  if [ -f "$STACK_DIR/docker-compose.yml" ]; then
+    ada_stack=1
+    ( cd "$STACK_DIR" && docker compose down )
+  fi
+  systemctl restart docker
+  if [ "$ada_stack" = 1 ]; then
+    ( cd "$STACK_DIR" && docker compose up -d )
+  fi
+
+  bentrok="$(subnet_bentrok)"
+  if [ -n "$bentrok" ]; then
+    # Yang tersisa jaringan Docker LAIN (bukan stack ini) — tak kita sentuh.
+    echo "GAGAL: masih ada jaringan Docker di 172.16.0.0/12:" >&2
+    echo "$bentrok" >&2
+    echo "Itu bukan jaringan stack RADIUS. Hapus/pindahkan dulu (docker network rm <nama>), lalu ulangi." >&2
+    return 1
+  fi
+  echo "jaringan Docker aman (198.18.0.0/15)."
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  [ "$(id -u)" = "0" ] || { echo "jalankan sebagai root (sudo)" >&2; exit 1; }
+  main "$@"
+fi

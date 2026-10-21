@@ -93,6 +93,22 @@ tambal API_PORT "$PORT_API"
 # kunci kedua yang tak dipakai siapa pun hanya memperbesar permukaan.
 chmod 600 "$ENV_FILE"
 
+# Jaringan Docker DIPINDAH dari 172.16.0.0/12 SEBELUM apa pun dimuat ulang.
+# Appliance dari OVA lama memakai bawaan Docker (172.17/16, …) yang bentrok
+# dengan pool NAS concentrator: gateway pool terbaca alamat lokal, REST API
+# tak terjangkau dari ERP dan auth RADIUS ke NAS nyasar ke docker0 — dari
+# router semuanya tampak benar (staging JKT-1, 21 Okt 2026). Volume DB aman.
+DOCKER_NET="$(dirname "$(readlink -f "$0")")/radius-docker-net"
+[ -x "$DOCKER_NET" ] || DOCKER_NET="$(command -v radius-docker-net || true)"
+if [ -n "$DOCKER_NET" ]; then
+  echo "memeriksa jaringan Docker ..."
+  STACK_DIR="$STACK_DIR" "$DOCKER_NET"
+else
+  echo "PERINGATAN: radius-docker-net tidak ada — jaringan Docker tidak diperiksa." >&2
+  echo "  Kalau 'ip route get <gateway pool NAS>' menjawab 'local … dev lo', appliance ini" >&2
+  echo "  bentrok dengan pool VPN. Lihat appliance/README.md (Jaringan Docker)." >&2
+fi
+
 # Container api membaca env saat START, jadi `up -d` saja tidak cukup kalau
 # container-nya sudah jalan dengan env lama — ia tidak akan dibuat ulang hanya
 # karena berkas .env berubah. --force-recreate memaksanya.

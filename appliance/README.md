@@ -21,6 +21,7 @@ yang sedang berjalan.
 | `radius-vpn-connect` | `radius-erp-enroll` | dipanggil, bukan diketik |
 | `radius-vpn-watchdog` | `radius-vpn-watchdog.timer` | tiap menit, diam kalau tunnel sehat |
 | `radius-vpn-watchdog.{service,timer}` | systemd | — |
+| `radius-docker-net` | `install-appliance.sh` + `radius-erp-enroll` | memindahkan Docker keluar dari 172.16.0.0/12 |
 
 ## Yang dijalankan mitra: SATU baris
 
@@ -183,6 +184,35 @@ yang paling mungkin terjadi sungguhan (listrik mitra pulih sebelum uplink-nya).
 > lalu jalankan ulang `radius-vpn-connect` dengan empat argumen yang sama
 > (sandi PPP-nya hanya tampil sekali di ERP — kalau sudah hilang, daftarkan
 > ulang dari ERP).
+
+## Jaringan Docker: WAJIB di luar 172.16.0.0/12
+
+Bawaan Docker (`docker0` 172.17.0.0/16, jaringan compose 172.18/16, 172.19/16, …)
+berada di ruang manajemen VPN concentrator: pool NAS `/17` di 172.17–172.31
+bergateway `.1`, alamat appliance di 172.16/16. Appliance lalu menganggap gateway
+pool **alamatnya sendiri** (`ip route get 172.17.0.1` → `local … dev lo`):
+
+- paket dari concentrator dibuang sebagai martian → REST API tak terjangkau dari
+  ERP, padahal dst-nat/srcnat/forward di router ber-counter naik dan dari dalam
+  appliance API menjawab 401;
+- balasan auth RADIUS ke NAS di 172.17.x nyasar ke `docker0` → login pelanggan
+  gagal.
+
+Kejadian staging JKT-1, 21 Okt 2026. `radius-docker-net` memindahkan Docker ke
+`198.18.0.0/15` (RFC 2544 — tak bentrok 172.16/12, 10/8, maupun LAN mitra):
+
+```
+/etc/docker/daemon.json
+{ "bip": "198.18.0.1/24",
+  "default-address-pools": [{ "base": "198.19.0.0/16", "size": 24 }] }
+```
+
+Dijalankan otomatis oleh `install-appliance.sh` (OVA baru) DAN `radius-erp-enroll`
+(appliance dari OVA lama ikut beres saat di-enroll). Stack dibuat ulang dengan
+`docker compose down` **tanpa `-v`** — volume database aman. `daemon.json` yang
+sudah berisi hal lain TIDAK ditimpa; skripnya berhenti dan menyebut dua kunci yang
+harus ditambahkan. Periksa saja: `sudo radius-docker-net --periksa`.
+Uji: `bash appliance/test-radius-docker-net.sh`.
 
 ## Urutan di golden image (A1)
 
