@@ -31,6 +31,10 @@ func RegisterV1(r fiber.Router) {
 	v.Put("/users/:user_id", v1UpdateUser)
 	v.Delete("/users/:user_id", v1DeleteUser)
 
+	// radcheck: hitung username tak dikenal ERP (Pindah Server RADIUS).
+	// POST → butuh scope write (ScopeByMethod).
+	v.Post("/radcheck/tidak-dikenal", v1RadcheckTidakDikenal)
+
 	// radusergroup
 	v.Get("/user-group/", v1ListUserGroup)
 	v.Post("/user-group/", v1CreateUserGroup)
@@ -190,10 +194,14 @@ func acctOut(r models.Radacct) schemas.V1Radacct {
 // @Param attribute query string false "Filter by attribute"
 // @Param skip query int false "Skip"
 // @Param limit query int false "Limit (max 1000)"
+// @Param after_id query int false "Keyset: hanya id > after_id (urut id); bila diisi, skip diabaikan"
 // @Success 200 {array} schemas.V1Radcheck
 // @Router /api/v1/users [get]
 func v1ListUsers(c *fiber.Ctx) error {
-	skip, limit := paging(c)
+	skip, limit, afterID, err := pagingKeyset(c)
+	if err != nil {
+		return apierr.BadRequest(c, err.Error())
+	}
 	q := database.DB.Model(&models.Radcheck{})
 	if v := c.Query("username"); v != "" {
 		q = q.Where("username = ?", v)
@@ -206,7 +214,7 @@ func v1ListUsers(c *fiber.Ctx) error {
 	c.Set("X-Total-Count", strconv.FormatInt(total, 10))
 
 	var rows []models.Radcheck
-	q.Order("id").Offset(skip).Limit(limit).Find(&rows)
+	terapkanAfterID(q, afterID).Order("id").Offset(skip).Limit(limit).Find(&rows)
 	out := make([]schemas.V1Radcheck, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, rcOut(r))
@@ -333,10 +341,14 @@ func v1DeleteUser(c *fiber.Ctx) error {
 // @Param groupname query string false "Filter by group name"
 // @Param skip query int false "Skip"
 // @Param limit query int false "Limit (max 1000)"
+// @Param after_id query int false "Keyset: hanya id > after_id (urut id); bila diisi, skip diabaikan"
 // @Success 200 {array} schemas.V1Radusergroup
 // @Router /api/v1/user-group/ [get]
 func v1ListUserGroup(c *fiber.Ctx) error {
-	skip, limit := paging(c)
+	skip, limit, afterID, err := pagingKeyset(c)
+	if err != nil {
+		return apierr.BadRequest(c, err.Error())
+	}
 	q := database.DB.Model(&models.Radusergroup{})
 	if v := c.Query("username"); v != "" {
 		q = q.Where("username = ?", v)
@@ -349,7 +361,7 @@ func v1ListUserGroup(c *fiber.Ctx) error {
 	c.Set("X-Total-Count", strconv.FormatInt(total, 10))
 
 	var rows []models.Radusergroup
-	q.Order("id").Offset(skip).Limit(limit).Find(&rows)
+	terapkanAfterID(q, afterID).Order("id").Offset(skip).Limit(limit).Find(&rows)
 	out := make([]schemas.V1Radusergroup, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, rugOut(r))
@@ -450,10 +462,14 @@ func v1DeleteUserGroup(c *fiber.Ctx) error {
 // @Param name query string false "Filter by group name"
 // @Param skip query int false "Skip"
 // @Param limit query int false "Limit (max 1000)"
+// @Param after_id query int false "Keyset: hanya id > after_id (urut id); bila diisi, skip diabaikan"
 // @Success 200 {array} schemas.V1Radgroupreply
 // @Router /api/v1/group/ [get]
 func v1ListGroupReply(c *fiber.Ctx) error {
-	skip, limit := paging(c)
+	skip, limit, afterID, err := pagingKeyset(c)
+	if err != nil {
+		return apierr.BadRequest(c, err.Error())
+	}
 	q := database.DB.Model(&models.Radgroupreply{})
 	if v := c.Query("name"); v != "" {
 		q = q.Where("groupname = ?", v)
@@ -463,7 +479,7 @@ func v1ListGroupReply(c *fiber.Ctx) error {
 	c.Set("X-Total-Count", strconv.FormatInt(total, 10))
 
 	var rows []models.Radgroupreply
-	q.Order("id").Offset(skip).Limit(limit).Find(&rows)
+	terapkanAfterID(q, afterID).Order("id").Offset(skip).Limit(limit).Find(&rows)
 	out := make([]schemas.V1Radgroupreply, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, rgrOut(r))
@@ -683,10 +699,14 @@ func v1DeleteGroupCheck(c *fiber.Ctx) error {
 // @Param attribute query string false "Filter by attribute"
 // @Param skip query int false "Skip"
 // @Param limit query int false "Limit (max 1000)"
+// @Param after_id query int false "Keyset: hanya id > after_id (urut id); bila diisi, skip diabaikan"
 // @Success 200 {array} schemas.V1Radreply
 // @Router /api/v1/reply/ [get]
 func v1ListReply(c *fiber.Ctx) error {
-	skip, limit := paging(c)
+	skip, limit, afterID, err := pagingKeyset(c)
+	if err != nil {
+		return apierr.BadRequest(c, err.Error())
+	}
 	q := database.DB.Model(&models.Radreply{})
 	if v := c.Query("username"); v != "" {
 		q = q.Where("username = ?", v)
@@ -699,7 +719,7 @@ func v1ListReply(c *fiber.Ctx) error {
 	c.Set("X-Total-Count", strconv.FormatInt(total, 10))
 
 	var rows []models.Radreply
-	q.Order("id").Offset(skip).Limit(limit).Find(&rows)
+	terapkanAfterID(q, afterID).Order("id").Offset(skip).Limit(limit).Find(&rows)
 	out := make([]schemas.V1Radreply, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, rrOut(r))
@@ -803,10 +823,14 @@ func v1DeleteReply(c *fiber.Ctx) error {
 // @Param type query string false "Filter by NAS type"
 // @Param skip query int false "Skip"
 // @Param limit query int false "Limit (max 1000)"
+// @Param after_id query int false "Keyset: hanya id > after_id (urut id); bila diisi, skip diabaikan"
 // @Success 200 {array} schemas.V1NAS
 // @Router /api/v1/nas/ [get]
 func v1ListNas(c *fiber.Ctx) error {
-	skip, limit := paging(c)
+	skip, limit, afterID, err := pagingKeyset(c)
+	if err != nil {
+		return apierr.BadRequest(c, err.Error())
+	}
 	q := database.DB.Model(&models.NAS{})
 	if v := c.Query("nasname"); v != "" {
 		q = q.Where("nasname LIKE ?", "%"+v+"%")
@@ -819,7 +843,7 @@ func v1ListNas(c *fiber.Ctx) error {
 	c.Set("X-Total-Count", strconv.FormatInt(total, 10))
 
 	var rows []models.NAS
-	q.Order("id").Offset(skip).Limit(limit).Find(&rows)
+	terapkanAfterID(q, afterID).Order("id").Offset(skip).Limit(limit).Find(&rows)
 	out := make([]schemas.V1NAS, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, nasOut(r))
@@ -982,11 +1006,21 @@ func v1DeleteNas(c *fiber.Ctx) error {
 // @Param username query string false "Filter by username"
 // @Param start_date query string false "RFC3339, lower bound on acctstarttime"
 // @Param end_date query string false "RFC3339, upper bound on acctstarttime"
+// @Param nasipaddress query []string false "Filter NAS IP (boleh berulang); tak sah → 400"
+// @Param updated_since query string false "RFC3339; sesi dimulai/diperbarui/berhenti pada/sesudah waktu ini; tak sah → 400"
 // @Success 200 {array} schemas.V1Radacct
 // @Router /api/v1/radacct/ [get]
 func v1ListRadacct(c *fiber.Ctx) error {
 	skip, limit := paging(c)
-	q := database.DB.Model(&models.Radacct{})
+	nasip := make([]string, 0)
+	for _, b := range c.Context().QueryArgs().PeekMulti("nasipaddress") {
+		nasip = append(nasip, string(b))
+	}
+	f, err := bacaFilterRadacct(nasip, c.Query("updated_since"))
+	if err != nil {
+		return apierr.BadRequest(c, err.Error())
+	}
+	q := f.terapkan(database.DB.Model(&models.Radacct{}))
 	if v := c.Query("username"); v != "" {
 		q = q.Where("username = ?", v)
 	}

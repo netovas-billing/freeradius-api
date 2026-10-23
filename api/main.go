@@ -80,6 +80,9 @@ func main() {
 	app := fiber.New(fiber.Config{
 		AppName:               "freeradius-api",
 		DisableStartupMessage: false,
+		// 16 MB: POST /api/v1/radcheck/tidak-dikenal membawa semua username
+		// yang dikenal ERP (bawaan Fiber 4 MB tak cukup untuk instance besar).
+		BodyLimit: 16 * 1024 * 1024,
 	})
 	app.Use(recover.New())
 	app.Use(logger.New())
