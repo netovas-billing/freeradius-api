@@ -87,13 +87,14 @@ func TestPort_DariEnv(t *testing.T) {
 	}
 }
 
-// Zona waktu DB tidak boleh ikut TZ mesin: kolom radacct naif (WIB), dan
-// pergeseran 7 jam masuk langsung ke angka tagihan tanpa galat apa pun.
-func TestDBTimeZone_BawaanJakartaBukanLocal(t *testing.T) {
+// Zona waktu DB tidak boleh ikut TZ mesin API. Bawaan KOSONG = dideteksi dari
+// MariaDB saat start (appliance Docker UTC terbaca WIB dulu → mundur 7 jam,
+// staging 26 Okt 2026); DB_TIMEZONE tetap bisa menimpanya.
+func TestDBTimeZone_BawaanDeteksiOtomatis(t *testing.T) {
 	bersihkanEnv(t)
 	Load()
-	if DBTimeZone != "Asia/Jakarta" {
-		t.Fatalf("bawaan DB_TIMEZONE harus Asia/Jakarta (eksplisit), dapat %q", DBTimeZone)
+	if DBTimeZone != "" {
+		t.Fatalf("bawaan DB_TIMEZONE harus kosong (deteksi otomatis), dapat %q", DBTimeZone)
 	}
 	bersihkanEnv(t)
 	t.Setenv("DB_TIMEZONE", "UTC")

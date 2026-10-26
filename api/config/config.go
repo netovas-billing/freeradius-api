@@ -48,7 +48,11 @@ func Load() {
 	// TZ SISTEM: benar di VM ber-TZ Asia/Jakarta, tapi bergeser 7 jam di VM
 	// ber-TZ UTC (bawaan Debian bersih) — dan pergeseran itu langsung masuk ke
 	// angka tagihan tanpa satu pun galat.
-	DBTimeZone = getenv("DB_TIMEZONE", "Asia/Jakarta")
+	//
+	// KOSONG (bawaan) = DIDETEKSI dari MariaDB saat start (database.deteksiZona):
+	// VM WIB maupun container UTC terbaca benar tanpa diatur. Isi hanya untuk
+	// menimpa hasil deteksi.
+	DBTimeZone = getenv("DB_TIMEZONE", "")
 
 	Port = getenv("PORT", "8000")
 

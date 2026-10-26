@@ -17,16 +17,17 @@ import (
 var DB *gorm.DB
 
 func Init() {
-	dsn := fmt.Sprintf(
-		// loc EKSPLISIT, bukan Local: kolom waktu radacct naif (WIB) dan
-		// loc=Local membuat penafsirannya ikut TZ sistem — bergeser 7 jam di VM
-		// ber-TZ UTC, langsung masuk ke angka tagihan tanpa galat apa pun.
-		"%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=%s",
-		config.DBUser, config.DBPassword, config.DBHost, config.DBPort, config.DBName,
-		url.QueryEscape(config.DBTimeZone),
-	)
+	zona := config.DBTimeZone
+	if zona == "" {
+		var err error
+		zona, err = deteksiZona()
+		if err != nil {
+			log.Fatalf("deteksi zona waktu MariaDB gagal: %v", err)
+		}
+		log.Printf("zona waktu kolom radacct (dideteksi dari MariaDB): %s", zona)
+	}
 
-	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{
+	db, err := gorm.Open(mysql.Open(dsn(zona)), &gorm.Config{
 		Logger: gormlogger.Default.LogMode(gormlogger.Warn),
 	})
 	if err != nil {
@@ -67,4 +68,32 @@ func Init() {
 			"    FLUSH PRIVILEGES;",
 			err, config.DBUser, config.DBName, config.DBUser)
 	}
+}
+
+// dsn — loc EKSPLISIT, bukan Local: kolom waktu radacct naif dan loc=Local
+// membuat penafsirannya ikut TZ mesin API, bukan zona MariaDB yang menulisnya.
+func dsn(zona string) string {
+	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=True&loc=%s",
+		config.DBUser, config.DBPassword, config.DBHost, config.DBPort, config.DBName,
+		url.QueryEscape(zona))
+}
+
+// deteksiZona — zona server MariaDB (yang dipakai FreeRADIUS menulis radacct)
+// dari selisih NOW() − UTC_TIMESTAMP() dalam satu pernyataan (jam yang sama).
+// DB_TIMEZONE yang diisi tetap menang (config.DBTimeZone tidak kosong).
+func deteksiZona() (string, error) {
+	db, err := gorm.Open(mysql.Open(dsn("UTC")), &gorm.Config{
+		Logger: gormlogger.Default.LogMode(gormlogger.Silent),
+	})
+	if err != nil {
+		return "", err
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		defer sqlDB.Close()
+	}
+	var detik int
+	if err := db.Raw("SELECT TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), NOW())").Scan(&detik).Error; err != nil {
+		return "", err
+	}
+	return ZonaDariSelisih(detik)
 }
