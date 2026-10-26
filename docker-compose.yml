@@ -71,6 +71,13 @@ services:
       DB_USER: ${DB_USER:-radius}
       DB_PASSWORD: ${DB_PASSWORD:-radiuspass_ganti}
       DB_NAME: ${DB_NAME:-radius}
+      # Zona kolom waktu radacct yang NAIF. Di appliance ini MariaDB dan
+      # FreeRADIUS berjalan di container ber-TZ UTC, jadi NOW()/FROM_UNIXTIME
+      # menulis UTC — BUKAN WIB seperti VM RADIUS Manager (bawaan API
+      # Asia/Jakarta). Tanpa ini setiap sesi terbaca mundur 7 jam: bukti login
+      # Pindah RADIUS ERP tak pernah terhitung (staging 26 Okt 2026) dan
+      # pemakaian per hari bergeser.
+      DB_TIMEZONE: ${DB_TIMEZONE:-UTC}
       API_KEY: ${API_KEY:-change-me-to-a-long-random-string}
       BASIC_AUTH_USER: ${BASIC_AUTH_USER:-}
       BASIC_AUTH_PASSWORD: ${BASIC_AUTH_PASSWORD:-}
