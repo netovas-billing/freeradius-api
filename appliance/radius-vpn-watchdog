@@ -31,8 +31,35 @@ catat() { echo "$(date -Is) watchdog: $*" >>"$LOG"; }
 # berulang tiap menit di log mesin yang sebenarnya sehat, cuma belum dipakai.
 [ -f "$CONF" ] && grep -q "$PENANDA" "$CONF" || exit 0
 
-# Sudah ada alamat di ppp/l2tp → tidak ada yang perlu dikerjakan.
-ip -4 -o addr show 2>/dev/null | grep -qE ' (ppp|l2tp)' && exit 0
+# Rute balik ke pool NAS (JEBAKAN 3 radius-vpn-connect). Appliance yang
+# di-enroll sebelum 26 Okt 2026 punya hook bernama `50-radius-route.sh` —
+# nama bertitik yang tak pernah dijalankan run-parts Debian — jadi rute itu
+# tak pernah ada dan setiap login NAS berakhir "radius timeout". Di sini:
+# hook diganti nama sekali, dan selama tunnel naik rute dipastikan ada.
+HOOK="/etc/ppp/ip-up.d/50-radius-route"
+if [ -f "$HOOK.sh" ] && [ ! -f "$HOOK" ]; then
+  mv "$HOOK.sh" "$HOOK" && chmod 755 "$HOOK" &&
+    catat "hook rute balik diganti nama (tanpa .sh) supaya dijalankan run-parts"
+fi
+pastikan_rute() {
+  local iface="$1" pool
+  [ -f "$HOOK" ] || return 0
+  pool="$(sed -n 's/^ip route replace \([0-9./]*\) dev .*/\1/p' "$HOOK" 2>/dev/null | head -n1)"
+  [ -n "$pool" ] || return 0
+  ip -4 route show exact "$pool" 2>/dev/null | grep -q " dev $iface" && return 0
+  if ip route replace "$pool" dev "$iface"; then
+    catat "rute balik $pool lewat $iface tidak ada — dipasang"
+  else
+    catat "GAGAL memasang rute balik $pool lewat $iface"
+  fi
+}
+
+# Sudah ada alamat di ppp/l2tp → hanya pastikan rute baliknya.
+IFACE="$(ip -4 -o addr show 2>/dev/null | awk '$2 ~ /^(ppp|l2tp)/ {print $2; exit}')"
+if [ -n "$IFACE" ]; then
+  pastikan_rute "$IFACE"
+  exit 0
+fi
 
 # pppd sudah lahir tapi IPCP belum selesai: dial lagi sekarang berarti
 # panggilan KEDUA ke LAC yang sama — dua sesi, dua alamat, dan concentrator

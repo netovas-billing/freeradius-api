@@ -110,8 +110,12 @@ EOF
 # tadinya 644 tetap 644 — sandi PPP terbaca semua pengguna mesin.
 chmod 600 /etc/ppp/chap-secrets
 
-# JEBAKAN 2 — berkas di /etc/ppp/ip-up.d/ HANYA dijalankan kalau namanya
-# berakhiran .sh DAN bisa dieksekusi. Tanpa keduanya ia diam saja.
+# JEBAKAN 2 — Debian menjalankan /etc/ppp/ip-up.d/ lewat `run-parts`, yang
+# HANYA menjalankan berkas bisa-dieksekusi yang namanya [A-Za-z0-9_-] saja.
+# Nama bertitik (mis. `50-radius-route.sh`) DILEWATI DIAM-DIAM — tak ada galat,
+# tak ada log, rute balik tak pernah terpasang. Itulah yang terjadi di staging
+# 26 Okt 2026 (`run-parts --test /etc/ppp/ip-up.d` hanya menyebut
+# 0000usepeerdns). Berkas lama bernama .sh dihapus di bawah.
 #
 # JEBAKAN 3 — RUTE BALIK KE POOL NAS. Ini yang paling halus dari semuanya.
 # Profile PPP memberi appliance local-address = GATEWAY POOL NAS (mis.
@@ -127,7 +131,8 @@ chmod 600 /etc/ppp/chap-secrets
 # PERSIS alamat peer appliance — sehingga rute balik kebetulan bekerja
 # sementara identitas NAS-nya rusak. Menutup satu sisi saja hanya memindahkan
 # gejalanya. Kalau salah satu sisi kelak diubah, ubah DUA-DUANYA.
-cat >/etc/ppp/ip-up.d/50-radius-route.sh <<EOF
+rm -f /etc/ppp/ip-up.d/50-radius-route.sh
+cat >/etc/ppp/ip-up.d/50-radius-route <<EOF
 #!/bin/sh
 # dihasilkan radius-vpn-connect — JANGAN sunting tangan
 # \$1 = nama interface ppp yang baru naik
@@ -137,7 +142,7 @@ ip route replace ${POOL_NAS} dev "\$1"
 echo "\$(date -Is) ppp up: iface=\$1 local=\$4 remote=\$5 rute=${POOL_NAS}" \\
   >>/var/log/radius-vpn.log
 EOF
-chmod +x /etc/ppp/ip-up.d/50-radius-route.sh
+chmod 755 /etc/ppp/ip-up.d/50-radius-route
 
 # JEBAKAN 4 — `enable --now` TIDAK memuat ulang config pada daemon yang SUDAH
 # jalan. Paket xl2tpd Debian menyalakan servicenya saat dipasang, yaitu dengan
