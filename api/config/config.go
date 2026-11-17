@@ -30,6 +30,23 @@ var (
 	RateLimitWindowSeconds int
 
 	WebhookPollSeconds int
+
+	// RadiusHealthAddr & RadiusHealthSecret — tujuan dan secret Access-Request
+	// pemeriksa GET /api/v1/radius/health (handlers/radius_health.go).
+	//
+	// API sehat TIDAK berarti FreeRADIUS sehat (insiden Pali 17 Nov 2026: api
+	// menjawab, FreeRADIUS restart terus karena "Access denied" ke MariaDB, ERP
+	// menyatakan server baru "Siap dipasang", router dialihkan, semua login
+	// "radius timeout"). Endpoint ini menanyai FreeRADIUS-nya sendiri.
+	//
+	// Stack docker: setup.sh membangkitkan secret di .env dan menanamnya ke
+	// raddb/sites-available/netovas-health, yang mendengarkan port INTERNAL
+	// 18190 (tak diterbitkan ke host) — karena itu bawaan alamatnya
+	// freeradius:18190, bukan 1812. freeradius-manager mengisinya
+	// 127.0.0.1:<port auth instance>. Secret KOSONG = pemeriksaan belum
+	// dikonfigurasi (501), bukan "sehat".
+	RadiusHealthAddr   string
+	RadiusHealthSecret string
 )
 
 func Load() {
@@ -70,6 +87,9 @@ func Load() {
 	RateLimitMax = getenvInt("RATE_LIMIT_MAX", 120)
 	RateLimitWindowSeconds = getenvInt("RATE_LIMIT_WINDOW_SECONDS", 60)
 	WebhookPollSeconds = getenvInt("WEBHOOK_POLL_SECONDS", 5)
+
+	RadiusHealthAddr = getenv("RADIUS_HEALTH_ADDR", "freeradius:18190")
+	RadiusHealthSecret = getenv("RADIUS_HEALTH_SECRET", "")
 
 	muatAPIKey()
 

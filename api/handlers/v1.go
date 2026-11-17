@@ -35,6 +35,10 @@ func RegisterV1(r fiber.Router) {
 	// POST → butuh scope write (ScopeByMethod).
 	v.Post("/radcheck/tidak-dikenal", v1RadcheckTidakDikenal)
 
+	// Kesehatan FreeRADIUS-nya sendiri (bukan API) — dipakai ERP sebelum
+	// mengalihkan router ke server ini. Lihat radius_health.go.
+	v.Get("/radius/health", v1RadiusHealth)
+
 	// radusergroup
 	v.Get("/user-group/", v1ListUserGroup)
 	v.Post("/user-group/", v1CreateUserGroup)

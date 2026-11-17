@@ -23,21 +23,26 @@ Golden image punya urutannya sendiri di `appliance/README.md`, dan
 `appliance/firstboot.sh` JANGAN dijalankan di sini.
 
 ```bash
-./setup.sh          # bootstrap raddb + schema + .env (API_KEY acak)
+./setup.sh          # bootstrap raddb + schema + .env (API_KEY & RADIUS_HEALTH_SECRET acak)
 docker compose up -d
-docker compose ps   # db healthy, freeradius & api up
+docker compose ps   # db healthy, freeradius & api up — "Restarting" = lihat Galat umum
+KEY=$(grep '^API_KEY=' .env | cut -d= -f2-)
+curl -s -H "X-API-Key: $KEY" localhost:8000/api/v1/radius/health
+# {"ok":true,"jawaban":"Access-Reject",...}  ← WAJIB ini sebelum router diarahkan ke sini
 ```
 
 `setup.sh` aman dijalankan berulang. Yang perlu diketahui tentang `.env`:
-ia DIBUAT di akhir `setup.sh`, jadi pada jalan pertama sandi DB yang ditanam
-ke raddb adalah bawaan `.env.example`. Mau menggantinya? Ganti **sebelum** DB
+kalau belum ada, ia DIBUAT dari `.env.example` di awal `setup.sh`, jadi pada
+jalan pertama sandi DB yang ditanam ke raddb adalah bawaan `.env.example`.
+Mau menggantinya? Ganti **sebelum** DB
 pertama lahir, atau buang volumenya — MariaDB hanya memakai
 `MARIADB_PASSWORD` saat volume masih kosong, jadi mengganti sandi di `.env`
 pada DB yang sudah ada menghasilkan FreeRADIUS dan api yang gagal konek tanpa
 sebab yang kelihatan. `DB_USER` juga boleh diganti (mis. `radiuspali`):
-`setup.sh` menanam user DAN sandi dari `.env` ke `mods-available/sql` lalu
-memeriksanya. Sebelum 17 Nov 2026 user di raddb ditulis mati `radius`, jadi
-`DB_USER` lain membuat FreeRADIUS ditolak MariaDB ("Access denied") dan restart
+`setup.sh` menanam user, sandi, DAN nama database (`DB_NAME`) dari `.env` ke
+`mods-available/sql` lalu memeriksanya. Sebelum 17 Nov 2026 user di raddb
+ditulis mati `radius` dan `radius_db` tetap bawaan template, jadi `DB_USER`/
+`DB_NAME` lain membuat FreeRADIUS ditolak MariaDB ("Access denied") dan restart
 terus — dengan `docker compose logs` KOSONG, karena galatnya masuk berkas log di
 dalam container. Untuk melihat galat semacam itu:
 `docker compose run --rm --entrypoint freeradius freeradius -X`.
@@ -59,6 +64,37 @@ curl -s -H "X-API-Key: $KEY" localhost:8000/api/users
 Swagger UI: <http://localhost:8000/docs/index.html>. Kalau semua panggilan
 `/api` dijawab 401, periksa `API_KEY` di `.env` TIDAK kosong — kosong berarti
 X-API-Key dimatikan dengan sengaja (gagal-tertutup; lihat `appliance/`).
+
+### 1b. FreeRADIUS hidup? (BUKAN sama dengan API hidup)
+
+`/health` hanya mem-ping MariaDB. API bisa menjawab sempurna sementara
+FreeRADIUS di sebelahnya restart terus — itu persis yang terjadi saat pindah
+RADIUS Pali (17 Nov 2026): ERP memverifikasi lewat API, menyatakan server baru
+siap, router dialihkan, dan semua login "radius timeout". Periksa FreeRADIUS-nya
+sendiri:
+
+```bash
+curl -s -H "X-API-Key: $KEY" localhost:8000/api/v1/radius/health
+```
+
+| Jawaban | Arti |
+| --- | --- |
+| `200 {"ok":true,"jawaban":"Access-Reject","rtt_ms":…}` | FreeRADIUS hidup, semua modul (termasuk sql) termuat dan DB terbaca. `Access-Reject` itu BENAR — pemeriksa sengaja memakai sandi salah. `rtt_ms` ≈ 1000 wajar (`reject_delay` FreeRADIUS). |
+| `503 {"ok":false,"galat":…}` | FreeRADIUS mati / restart terus / DB tak terbaca / secret pemeriksa tak cocok — baca `galat`, lalu **Galat umum** di bawah. |
+| `501 {"ok":false,…}` | `RADIUS_HEALTH_SECRET` kosong di container api — jalankan `./setup.sh` lalu `docker compose up -d`. |
+
+Cara kerjanya: api mengirim Access-Request (User-Name `__netovas_health__`,
+sandi acak) ke socket INTERNAL `freeradius:18190` — virtual server
+`netovas_health` (`freeradius/overlay/sites-available/netovas-health`) dengan
+client-nya sendiri, secret `RADIUS_HEALTH_SECRET` yang dibangkitkan `setup.sh`.
+Port itu tidak diterbitkan ke host, socket itu selalu menolak, dan tak ada yang
+ditulis ke DB (radpostauth tidak tersentuh). Client pemeriksa SENGAJA bukan
+blok subnet di `clients.conf`: FreeRADIUS memilih client paling spesifik, jadi
+blok seperti `172.16.0.0/12` akan membajak NAS di pool concentrator
+(172.17–172.31) dan semua login mereka gagal.
+
+Server yang sudah berjalan sebelum fitur ini: `git pull`, `./setup.sh`,
+`docker compose up -d --build`, `docker compose restart freeradius`.
 
 ### 2. Buat user uji lewat API
 
@@ -105,13 +141,56 @@ lewat virtual server `dynamic_clients`. (Instance NOC di bawah
 freeradius-manager BERBEDA — di sana NAS baru memang menuntut restart, karena
 kliennya terdaftar statis per-socket.)
 
+## Galat umum
+
+**`freeradius` "Restarting" terus dan `docker compose logs freeradius` KOSONG.**
+FreeRADIUS menulis galatnya ke berkas di dalam container, bukan ke stdout —
+`logs` memang kosong. Jalankan sekali dalam mode debug di depan mata:
+
+```bash
+docker compose run --rm --entrypoint freeradius freeradius -X
+```
+
+Baris terakhir sebelum keluar adalah sebabnya. `Ctrl-C` kalau ternyata ia
+menyala (berarti masalahnya sudah hilang — `docker compose up -d`).
+
+**`Access denied for user '…'@'…'` atau `Access denied … to database '…'`.**
+Login/sandi/nama database di raddb tidak sama dengan yang dipakai MariaDB.
+Jangan sunting `mods-available/sql` dengan tangan — jalankan ulang:
+
+```bash
+./setup.sh                        # tanam DB_NAME/DB_USER/DB_PASSWORD dari .env, lalu diperiksa
+docker compose restart freeradius
+curl -s -H "X-API-Key: $KEY" localhost:8000/api/v1/radius/health
+```
+
+Masih ditolak padahal `.env` benar? MariaDB hanya membuat user/sandi/database
+saat volume DB pertama kali lahir — mengganti `.env` sesudahnya tidak mengubah
+DB yang sudah ada. Samakan `.env` dengan isi DB lama, atau (lab saja)
+`docker compose down -v`.
+
+**Port `18120` sudah dipakai / `Error binding to port`.** Ada site lain di
+`sites-enabled/` yang memakai port yang sama — `18120` milik `inner-tunnel`
+bawaan, itulah sebabnya pemeriksa memakai `18190`. Jangan mengubah port
+pemeriksa tanpa mengubah `RADIUS_HEALTH_ADDR` juga.
+
+**`/api/v1/radius/health` 503 "tidak menjawab" padahal `docker compose ps`
+menunjukkan freeradius Up.** Secret pemeriksa di api (`.env`) tak sama dengan
+raddb — mis. `.env` diganti tanpa menjalankan ulang `setup.sh`. Jalankan
+`./setup.sh`, `docker compose up -d`, `docker compose restart freeradius`.
+
+**503 "tidak bisa membaca database (modul sql gagal)".** FreeRADIUS menyala tapi
+MariaDB mati / tak terjangkau sesudahnya: `docker compose ps db`,
+`docker compose logs db`.
+
 ## API
 
 Stack: **Go 1.23 + Fiber v2 + GORM + swaggo**. Image final ~55 MB (alpine + static binary).
 
 - Swagger UI: <http://localhost:8000/docs/index.html>
 - OpenAPI JSON: <http://localhost:8000/docs/doc.json>
-- Healthcheck: `GET /health`
+- Healthcheck API: `GET /health` (hanya API + ping MariaDB)
+- Healthcheck FreeRADIUS: `GET /api/v1/radius/health` (butuh auth; lihat 1b)
 - Auth: header `X-API-Key: <isi API_KEY di .env>`
 
 ### Endpoint utama

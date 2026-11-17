@@ -1,0 +1,73 @@
+# -*- text -*-
+######################################################################
+#
+#   netovas-health — sasaran pemeriksa GET /api/v1/radius/health.
+#
+#   KENAPA (insiden Pali 17 Nov 2026): API sehat TIDAK berarti
+#   FreeRADIUS sehat. FreeRADIUS restart terus ("Access denied" ke
+#   MariaDB), API tetap menjawab, ERP menyatakan server baru siap,
+#   router dialihkan — semua login "radius timeout". Kini API mengirim
+#   Access-Request sungguhan ke sini; jawaban apa pun = proses hidup
+#   DAN semua modul (termasuk sql) termuat.
+#
+#   KENAPA SOCKET SENDIRI, BUKAN client di clients.conf:
+#     - Port 18190 TIDAK diterbitkan ke host (docker-compose.yml hanya
+#       menerbitkan 1812/1813), jadi hanya container di jaringan
+#       compose (api) yang bisa mengirim ke sini. BUKAN 18120: itu
+#       milik inner-tunnel bawaan (127.0.0.1:18120) dan bentrok membuat
+#       FreeRADIUS GAGAL START — teruji 17 Nov 2026.
+#     - `clients = netovas_health` membuat socket ini HANYA mengenal
+#       client di bawah, dan client di bawah HANYA berlaku untuk socket
+#       ini. Client global berdasarkan subnet (mis. 172.16.0.0/12)
+#       akan MEMBAJAK NAS: FreeRADIUS memilih client paling spesifik,
+#       dan pool NAS concentrator ada di 172.17–172.31 — semua login
+#       NAS itu akan diperiksa dengan secret pemeriksa dan gagal.
+#     - Tidak perlu mematok subnet/IP container di docker-compose.yml
+#       (yang bisa bentrok dengan jaringan lain di host).
+#
+#   AMAN dari luar: secret 256-bit acak per server (setup.sh /
+#   firstboot.sh), Message-Authenticator wajib, dan virtual server ini
+#   SELALU menolak — tak bisa dipakai menebak sandi pelanggan. Tak ada
+#   post-auth, jadi radpostauth TIDAK ditulis.
+#
+#   JANGAN disunting di raddb/: setup.sh menyalin ulang berkas ini dari
+#   freeradius/overlay/ setiap dijalankan lalu menanam secret dari
+#   RADIUS_HEALTH_SECRET di .env (penanda __RADIUS_HEALTH_SECRET__).
+#
+######################################################################
+
+clients netovas_health {
+	client pemeriksa {
+		ipaddr = 0.0.0.0/0
+		secret = "__RADIUS_HEALTH_SECRET__"
+		shortname = netovas-health
+		require_message_authenticator = yes
+	}
+}
+
+server netovas_health {
+	listen {
+		type = auth
+		ipaddr = *
+		port = 18190
+		clients = netovas_health
+	}
+
+	authorize {
+		#  Kueri sungguhan ke DB: membuktikan sql bukan hanya termuat
+		#  tetapi juga masih bisa membaca. `fail = 1` supaya kegagalan
+		#  tidak langsung mengakhiri seksi — kita perlu menandainya.
+		sql {
+			fail = 1
+		}
+		if (fail) {
+			update reply {
+				&Reply-Message := "netovas-health: sql gagal"
+			}
+		}
+		reject
+	}
+
+	authenticate {
+	}
+}

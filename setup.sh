@@ -14,7 +14,28 @@ TMP="fr-bootstrap-$$"
 SRC_CONFIG="/etc/freeradius"
 SRC_SCHEMA="/etc/freeradius/mods-config/sql/main/mysql/schema.sql"
 
-# ---- 0. Muat .env kalau ada -------------------------------------------------
+# ---- 0. Generate .env kalau belum ada ----------------------------------------
+#
+# DI AWAL, bukan di akhir: RADIUS_HEALTH_SECRET dibangkitkan KE .env lalu
+# ditanam ke raddb di langkah 5 — .env harus sudah ada sebelum itu. Dulu blok
+# ini langkah terakhir; nilainya sama dengan bawaan di bawah, jadi urutan baru
+# tidak mengubah apa yang ditanam.
+acakHex() {
+  if command -v openssl >/dev/null; then
+    openssl rand -hex 32
+  else
+    od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
+  fi
+}
+if [ ! -f .env ]; then
+  echo "Creating .env dari .env.example ..."
+  cp .env.example .env
+  KEY="$(acakHex)"
+  sed -i.bak "s|^API_KEY=.*|API_KEY=${KEY}|" .env && rm -f .env.bak
+  echo "Generated random API_KEY di .env"
+fi
+
+# ---- 0b. Muat .env -----------------------------------------------------------
 #
 # Sampai 13 Okt 2026 berkas ini TIDAK PERNAH membaca .env: sandi DB ditulis ke
 # raddb dari konstanta, dan sed-nya hanya mencocokkan baris template asli
@@ -35,7 +56,7 @@ muatEnv() {
   local baris kunci nilai
   while IFS= read -r baris; do
     case "$baris" in
-      FR_TAG=*|DB_USER=*|DB_PASSWORD=*)
+      FR_TAG=*|DB_NAME=*|DB_USER=*|DB_PASSWORD=*|RADIUS_HEALTH_SECRET=*)
         kunci="${baris%%=*}"; nilai="${baris#*=}"
         # `if`, bukan `[ … ] && …`: di bawah `set -e` bentuk kedua membuat
         # skrip KELUAR begitu ada baris berkunci cocok tapi nilainya kosong
@@ -66,6 +87,46 @@ case "$DB_USER" in
     echo "DB_USER di .env hanya boleh huruf, angka, titik, garis bawah, strip: '$DB_USER'" >&2
     exit 1 ;;
 esac
+# Nama database — SAMA dengan MARIADB_DATABASE & api (${DB_NAME:-radius}).
+# Sampai 17 Nov 2026 radius_db di raddb tetap bawaan template ("radius"): Pali
+# ber-DB_NAME=radiuspali → MariaDB membuat radiuspali, FreeRADIUS meminta
+# "radius" → "Access denied ... to database 'radius'", restart terus, log
+# compose kosong. Titik tidak diizinkan (bukan nama database MariaDB yang sah).
+DB_NAME="${DB_NAME:-radius}"
+case "$DB_NAME" in
+  *[!A-Za-z0-9_-]*)
+    echo "DB_NAME di .env hanya boleh huruf, angka, garis bawah, strip: '$DB_NAME'" >&2
+    exit 1 ;;
+esac
+
+# Secret pemeriksa kesehatan FreeRADIUS (GET /api/v1/radius/health). Kosong =
+# dibangkitkan dan DITULIS ke .env — api membacanya dari sana lewat compose,
+# raddb mendapatkannya di langkah 5. Keduanya HARUS sama; kalau tidak, ERP
+# membaca FreeRADIUS sebagai mati dan menolak memindahkan router.
+if [ -z "${RADIUS_HEALTH_SECRET:-}" ]; then
+  RADIUS_HEALTH_SECRET="$(acakHex)"
+  if grep -q '^RADIUS_HEALTH_SECRET=' .env; then
+    sed -i "s|^RADIUS_HEALTH_SECRET=.*|RADIUS_HEALTH_SECRET=${RADIUS_HEALTH_SECRET}|" .env
+  else
+    printf '\n# Dibangkitkan setup.sh — secret pemeriksa kesehatan FreeRADIUS (lihat .env.example).\nRADIUS_HEALTH_SECRET=%s\n' \
+      "$RADIUS_HEALTH_SECRET" >> .env
+  fi
+  grep -qx "RADIUS_HEALTH_SECRET=${RADIUS_HEALTH_SECRET}" .env || {
+    echo "GAGAL menulis RADIUS_HEALTH_SECRET ke .env — berhenti" >&2
+    exit 1
+  }
+  echo "Generated random RADIUS_HEALTH_SECRET di .env"
+fi
+# Masuk ke pola sed dan ke tanda kutip konfigurasi FreeRADIUS.
+case "$RADIUS_HEALTH_SECRET" in
+  *[!A-Za-z0-9_.-]*)
+    echo "RADIUS_HEALTH_SECRET di .env hanya boleh huruf, angka, titik, garis bawah, strip" >&2
+    exit 1 ;;
+esac
+if [ "${#RADIUS_HEALTH_SECRET}" -lt 16 ]; then
+  echo "RADIUS_HEALTH_SECRET di .env terlalu pendek (minimal 16 karakter) — kosongkan supaya dibangkitkan" >&2
+  exit 1
+fi
 
 # ---- Cleanup symlink dangling dari run gagal ----
 if [ -L freeradius/raddb ] && [ ! -e freeradius/raddb ]; then
@@ -112,7 +173,7 @@ fi
 # ---- 4. Patch mods-available/sql ke MySQL ----
 SQL_CONF="freeradius/raddb/mods-available/sql"
 if [ -f "$SQL_CONF" ]; then
-  echo "Patch $SQL_CONF: driver/dialect/server/login/password ..."
+  echo "Patch $SQL_CONF: driver/dialect/server/login/password/radius_db ..."
   # dialect dan driver
   sed -i 's|^	dialect = "sqlite"|	dialect = "mysql"|' "$SQL_CONF"
   sed -i 's|^	driver = "rlm_sql_null"|	driver = "rlm_sql_${dialect}"|' "$SQL_CONF"
@@ -151,6 +212,18 @@ if [ -f "$SQL_CONF" ]; then
     exit 1
   }
 
+  # Nama database: hanya baris AKTIF (tanpa `#`). BEDA dengan login/sandi:
+  # template memuat tiga contoh radius_db BERKOMENTAR (Oracle, PostgreSQL) —
+  # `^#?` akan menghidupkan ketiganya. Baris aktifnya `\tradius_db = "radius"`.
+  sed -i -E 's|^([[:space:]]*)radius_db[[:space:]]*=[[:space:]]*".*"|\1radius_db = "'"$DB_NAME"'"|' \
+    "$SQL_CONF"
+  # Tepat SATU baris aktif dan nilainya DB_NAME.
+  if [ "$(grep -cE '^[[:space:]]*radius_db[[:space:]]*=' "$SQL_CONF")" != 1 ] ||
+     ! grep -qE '^[[:space:]]*radius_db = "'"$DB_NAME"'"$' "$SQL_CONF"; then
+    echo "GAGAL menanam nama database ($DB_NAME) ke $SQL_CONF — berhenti, FreeRADIUS akan ditolak MariaDB" >&2
+    exit 1
+  fi
+
   # Comment-out TLS block di dalam mysql {...} — koneksi internal Docker
   if grep -q '^		tls {$' "$SQL_CONF"; then
     echo "Comment-out TLS block di mysql {} ..."
@@ -187,15 +260,30 @@ if [ -f "$OVERLAY_CLIENTS" ] && [ -f "$CLIENTS" ]; then
   fi
 fi
 
-# ---- 6. Generate .env kalau belum ada ----
-if [ ! -f .env ]; then
-  echo "Creating .env dari .env.example ..."
-  cp .env.example .env
-  if command -v openssl >/dev/null; then
-    KEY="$(openssl rand -hex 32)"
-    sed -i.bak "s|^API_KEY=.*|API_KEY=${KEY}|" .env && rm -f .env.bak
-    echo "Generated random API_KEY di .env"
-  fi
+# ---- 5b. Sasaran pemeriksa kesehatan (GET /api/v1/radius/health) ----
+#
+# Socket INTERNAL 18190 dengan client-nya sendiri — alasannya di kepala berkas
+# overlay. DISALIN ULANG setiap kali (idempoten, ikut secret .env yang diganti),
+# secret ditanam lalu DIVERIFIKASI seperti sandi DB: secret yang tak cocok
+# membuat ERP membaca FreeRADIUS sebagai mati dan menolak memindahkan router.
+OVERLAY_HEALTH="freeradius/overlay/sites-available/netovas-health"
+DEST_HEALTH="freeradius/raddb/sites-available/netovas-health"
+if [ ! -f "$OVERLAY_HEALTH" ]; then
+  echo "GAGAL: $OVERLAY_HEALTH tidak ada — repo tidak utuh" >&2
+  exit 1
+fi
+echo "Apply overlay: sites-available/netovas-health (secret dari .env) ..."
+cp "$OVERLAY_HEALTH" "$DEST_HEALTH"
+sed -i "s|__RADIUS_HEALTH_SECRET__|${RADIUS_HEALTH_SECRET}|" "$DEST_HEALTH"
+if grep -q '__RADIUS_HEALTH_SECRET__' "$DEST_HEALTH" ||
+   ! grep -qF "secret = \"${RADIUS_HEALTH_SECRET}\"" "$DEST_HEALTH"; then
+  echo "GAGAL menanam RADIUS_HEALTH_SECRET ke $DEST_HEALTH — berhenti" >&2
+  exit 1
+fi
+chmod go+r "$DEST_HEALTH"
+if [ ! -e freeradius/raddb/sites-enabled/netovas-health ]; then
+  echo "Enable sites-enabled/netovas-health ..."
+  ln -sf ../sites-available/netovas-health freeradius/raddb/sites-enabled/netovas-health
 fi
 
 cat <<'EOF'
@@ -209,21 +297,28 @@ Yang otomatis diaplikasikan:
   - TLS block ke DB di-comment (koneksi internal Docker)
   - sites-enabled/dynamic-clients aktif (overlay dari freeradius/overlay/)
   - clients.conf: tambah blok `client dynamic` (0.0.0.0/0 — narrow di prod!)
-  - user (DB_USER) & sandi DB dari .env DITANAM ke mods-available/sql,
-    lalu DIVERIFIKASI
-  - .env dengan API_KEY random 32-byte
+  - user (DB_USER), sandi (DB_PASSWORD) & nama database (DB_NAME) dari .env
+    DITANAM ke mods-available/sql, lalu DIVERIFIKASI
+  - sites-enabled/netovas-health: socket internal 18190 untuk pemeriksa
+    kesehatan, secret RADIUS_HEALTH_SECRET dari .env (dibangkitkan bila kosong)
+  - .env dengan API_KEY random 32-byte (bila .env belum ada)
 
 Sebelum jalan:
   - Periksa freeradius/raddb/clients.conf — ganti subnet `client dynamic`
     dari 0.0.0.0/0 ke range mitra Anda (mis. VPN tunnel) untuk production.
-  - Ubah DB_USER/DB_PASSWORD di .env lalu jalankan ULANG berkas ini; keduanya
+  - Ubah DB_NAME/DB_USER/DB_PASSWORD di .env lalu jalankan ULANG berkas ini; ketiganya
     ditanam ke raddb dari .env, bukan dari konstanta, dan hasilnya diperiksa.
     (Sampai 13 Okt 2026 itu TIDAK terjadi: raddb memegang sandi lama dan
     FreeRADIUS gagal konek DB tanpa pesan yang menunjuk sebabnya.)
 
 Lanjut:
   docker compose up -d
-  docker compose logs -f freeradius
+  # Server LAMA yang baru diperbarui: raddb berubah, FreeRADIUS harus restart
+  docker compose restart freeradius
+  # WAJIB sebelum server ini dipakai — FreeRADIUS-nya sendiri, bukan hanya API:
+  curl -s -H "X-API-Key: <API_KEY dari .env>" http://localhost:8000/api/v1/radius/health
+  #   {"ok":true,"jawaban":"Access-Reject",...}  → siap
+  #   {"ok":false,...}                           → baca "galat", lihat README "Galat umum"
   # API: http://localhost:8000/docs/index.html
 
 Membuat APPLIANCE untuk mitra (bukan instance NOC)? Lihat appliance/README.md —

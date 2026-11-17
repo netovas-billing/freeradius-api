@@ -58,6 +58,11 @@ DB_NAME=radius
 DB_USER=radius
 DB_PASSWORD=${DB_PASSWORD}
 
+# Secret pemeriksa kesehatan FreeRADIUS (GET /api/v1/radius/health) — unik
+# per appliance, ditanam ke raddb di langkah 3.
+RADIUS_HEALTH_SECRET=$(acak 32)
+RADIUS_HEALTH_ADDR=freeradius:18190
+
 # Diisi radius-erp-enroll saat appliance didaftarkan di ERP.
 API_KEY=
 BASIC_AUTH_USER=
@@ -82,11 +87,34 @@ DB_PASSWORD="$(grep '^DB_PASSWORD=' .env | cut -d= -f2-)"
 # User DB juga dari .env (bawaan radius, sama dengan docker-compose.yml) —
 # login di raddb pernah ditulis mati "radius" sehingga .env ber-DB_USER lain
 # membuat FreeRADIUS ditolak MariaDB (17 Nov 2026, server Pali).
-DB_USER="$(grep '^DB_USER=' .env | cut -d= -f2-)"
+DB_USER="$(grep '^DB_USER=' .env | cut -d= -f2- || true)"
 DB_USER="${DB_USER:-radius}"
 case "$DB_USER" in
   *[!A-Za-z0-9_.-]*)
     echo "DB_USER di .env hanya boleh huruf, angka, titik, garis bawah, strip: '$DB_USER'" >&2
+    exit 1 ;;
+esac
+# Nama database juga dari .env — radius_db di raddb pernah tetap bawaan
+# template ("radius") sehingga DB_NAME lain ditolak MariaDB (Pali, 17 Nov 2026).
+DB_NAME="$(grep '^DB_NAME=' .env | cut -d= -f2- || true)"
+DB_NAME="${DB_NAME:-radius}"
+case "$DB_NAME" in
+  *[!A-Za-z0-9_-]*)
+    echo "DB_NAME di .env hanya boleh huruf, angka, garis bawah, strip: '$DB_NAME'" >&2
+    exit 1 ;;
+esac
+# Secret pemeriksa kesehatan: .env lama (tak dibuat ulang di atas) bisa belum
+# memuatnya — bangkitkan di sini. Secret image TIDAK boleh dipakai: raddb di
+# OVA memegang secret appliance NOC, sama untuk semua mitra.
+RADIUS_HEALTH_SECRET="$(grep '^RADIUS_HEALTH_SECRET=' .env | cut -d= -f2- || true)"
+if [ -z "$RADIUS_HEALTH_SECRET" ]; then
+  RADIUS_HEALTH_SECRET="$(acak 32)"
+  sed -i '/^RADIUS_HEALTH_SECRET=/d' .env
+  printf 'RADIUS_HEALTH_SECRET=%s\n' "$RADIUS_HEALTH_SECRET" >> .env
+fi
+case "$RADIUS_HEALTH_SECRET" in
+  *[!A-Za-z0-9_.-]*)
+    echo "RADIUS_HEALTH_SECRET di .env hanya boleh huruf, angka, titik, garis bawah, strip" >&2
     exit 1 ;;
 esac
 
@@ -99,7 +127,7 @@ esac
 # SINI, sesudah sandinya dibangkitkan.
 SQL_CONF="freeradius/raddb/mods-available/sql"
 if [ -f "$SQL_CONF" ]; then
-  echo "menanam user & sandi DB ke $SQL_CONF ..."
+  echo "menanam user, sandi & nama DB ke $SQL_CONF ..."
   sed -i -E 's|^#?([[:space:]]*)login[[:space:]]*=[[:space:]]*".*"|\1login = "'"${DB_USER}"'"|' "$SQL_CONF"
   grep -q "login = \"${DB_USER}\"" "$SQL_CONF" || {
     echo "GAGAL menanam user DB (${DB_USER}) ke $SQL_CONF — jangan lanjut, auth akan mati senyap" >&2
@@ -119,8 +147,40 @@ if [ -f "$SQL_CONF" ]; then
     echo "GAGAL menanam sandi DB ke $SQL_CONF — jangan lanjut, auth akan mati senyap" >&2
     exit 1
   }
+  # Nama database: hanya baris AKTIF — template memuat contoh radius_db
+  # BERKOMENTAR (Oracle/PostgreSQL) yang tak boleh ikut dihidupkan `^#?`.
+  sed -i -E 's|^([[:space:]]*)radius_db[[:space:]]*=[[:space:]]*".*"|\1radius_db = "'"${DB_NAME}"'"|' "$SQL_CONF"
+  if [ "$(grep -cE '^[[:space:]]*radius_db[[:space:]]*=' "$SQL_CONF")" != 1 ] ||
+     ! grep -qE '^[[:space:]]*radius_db = "'"${DB_NAME}"'"$' "$SQL_CONF"; then
+    echo "GAGAL menanam nama database (${DB_NAME}) ke $SQL_CONF — jangan lanjut, FreeRADIUS akan ditolak MariaDB" >&2
+    exit 1
+  fi
 else
   echo "PERINGATAN: $SQL_CONF tidak ada — raddb belum di-bootstrap NOC (setup.sh di A1)" >&2
+fi
+
+# ---- 3b. Secret pemeriksa kesehatan ke raddb -------------------------------
+#
+# Alasan sama dengan langkah 3: raddb di OVA memegang secret milik image.
+# Disalin ulang dari overlay (penanda __RADIUS_HEALTH_SECRET__) lalu
+# DIVERIFIKASI — secret yang tak cocok membuat ERP membaca FreeRADIUS appliance
+# ini sebagai mati dan menolak memindahkan router ke sini.
+OVERLAY_HEALTH="freeradius/overlay/sites-available/netovas-health"
+DEST_HEALTH="freeradius/raddb/sites-available/netovas-health"
+if [ -f "$OVERLAY_HEALTH" ] && [ -d freeradius/raddb/sites-available ]; then
+  echo "menanam secret pemeriksa kesehatan ke $DEST_HEALTH ..."
+  cp "$OVERLAY_HEALTH" "$DEST_HEALTH"
+  sed -i "s|__RADIUS_HEALTH_SECRET__|${RADIUS_HEALTH_SECRET}|" "$DEST_HEALTH"
+  if grep -q '__RADIUS_HEALTH_SECRET__' "$DEST_HEALTH" ||
+     ! grep -qF "secret = \"${RADIUS_HEALTH_SECRET}\"" "$DEST_HEALTH"; then
+    echo "GAGAL menanam secret pemeriksa kesehatan ke $DEST_HEALTH — jangan lanjut" >&2
+    exit 1
+  fi
+  chmod go+r "$DEST_HEALTH"
+  [ -e freeradius/raddb/sites-enabled/netovas-health ] ||
+    ln -sf ../sites-available/netovas-health freeradius/raddb/sites-enabled/netovas-health
+else
+  echo "PERINGATAN: $OVERLAY_HEALTH / raddb tidak ada — pemeriksa kesehatan FreeRADIUS tidak dipasang (ERP akan melihatnya 'tak didukung')" >&2
 fi
 
 # ---- 4. Jalankan stack -----------------------------------------------------

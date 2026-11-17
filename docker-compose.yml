@@ -49,6 +49,8 @@ services:
     # itu harus dinyalakan dulu di raddb. Probe palsu — mis. memeriksa proses
     # masih hidup — justru membuat container tampak sehat saat ia sudah menolak
     # setiap auth karena gagal konek DB.
+    # Probe jujur itu kini ada di api: GET /api/v1/radius/health mengirim
+    # Access-Request ke socket internal 18190 (lihat api di bawah).
 
   api:
     build: ./api
@@ -83,6 +85,12 @@ services:
       RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-120}
       RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
       WEBHOOK_POLL_SECONDS: ${WEBHOOK_POLL_SECONDS:-5}
+      # Pemeriksa kesehatan FreeRADIUS (GET /api/v1/radius/health). Secret
+      # dibangkitkan setup.sh ke .env DAN ditanam ke raddb; alamatnya socket
+      # internal 18190 (sites-available/netovas-health) — sengaja TIDAK ada di
+      # `ports:` freeradius. Secret kosong = 501 "belum dikonfigurasi".
+      RADIUS_HEALTH_ADDR: ${RADIUS_HEALTH_ADDR:-freeradius:18190}
+      RADIUS_HEALTH_SECRET: ${RADIUS_HEALTH_SECRET:-}
     ports:
       # Port TERBIT dari API_PORT, container tetap 8000.
       #
