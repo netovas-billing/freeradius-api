@@ -94,7 +94,13 @@ blok seperti `172.16.0.0/12` akan membajak NAS di pool concentrator
 (172.17–172.31) dan semua login mereka gagal.
 
 Server yang sudah berjalan sebelum fitur ini: `git pull`, `./setup.sh`,
-`docker compose up -d --build`, `docker compose restart freeradius`.
+`docker compose up -d --build`, `docker compose restart freeradius`. Lupa
+restart → `503` "FreeRADIUS menolak paket … socket pemeriksa belum aktif":
+socket 18190 baru dibuka FreeRADIUS saat start.
+
+Penanaman raddb oleh `setup.sh` dan `appliance/firstboot.sh` (login, sandi,
+`radius_db`, secret pemeriksa) dikunci uji tanpa Docker:
+`bash scripts/test-setup.sh`.
 
 ### 2. Buat user uji lewat API
 

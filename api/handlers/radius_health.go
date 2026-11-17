@@ -34,6 +34,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -155,6 +156,15 @@ func periksaRadius(ctx context.Context, addr, secret string, batas, jeda time.Du
 			return hasilPeriksaRadius{}, &galatPeriksaRadius{fmt.Sprintf(
 				"FreeRADIUS tidak menjawab di %s dalam %s — cek 'docker compose ps' dan log /var/log/freeradius/radius.log (FreeRADIUS restart terus? jalankan 'docker compose run --rm --entrypoint freeradius freeradius -X'); bila FreeRADIUS menyala, secret pemeriksa mungkin tak cocok — jalankan ulang setup.sh",
 				addr, detik(batas))}
+		case errors.Is(err, syscall.ECONNREFUSED):
+			// ICMP port-unreachable: host hidup, tetapi TAK ADA yang mendengar
+			// di port itu. Penyebab tersering: setup.sh baru saja menambah
+			// socket pemeriksa, tetapi FreeRADIUS belum di-restart sehingga
+			// socket itu belum dibuka. Pesan "mati" biasa menyuruh operator
+			// mencari masalah yang tidak ada.
+			return hasilPeriksaRadius{}, &galatPeriksaRadius{fmt.Sprintf(
+				"FreeRADIUS menolak paket di %s (port tertutup) — socket pemeriksa belum aktif: %s",
+				addr, petunjukRestart(addr))}
 		default:
 			var dns *net.DNSError
 			if errors.As(err, &dns) {
@@ -179,6 +189,25 @@ func periksaRadius(ctx context.Context, addr, secret string, batas, jeda time.Du
 		ReplyMessage: rfc2865.ReplyMessage_GetString(jwb),
 		RTT:          rtt,
 	}, nil
+}
+
+// petunjukRestart — cara me-restart FreeRADIUS menurut jenis server. Alamat
+// loopback (127.0.0.1 / localhost / ::1) = instance freeradius-manager yang
+// menjalankan FreeRADIUS di host yang sama; selain itu = stack docker
+// (bawaan "freeradius:18190").
+func petunjukRestart(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	if host == "localhost" {
+		host = "127.0.0.1"
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return "server freeradius-manager: jalankan './radius-manager.sh aktifkan-kesehatan <instance> --restart' " +
+			"(atau restart FreeRADIUS instance itu), lalu periksa lagi"
+	}
+	return "jalankan 'docker compose restart freeradius' (wajib sekali sesudah setup.sh), lalu periksa lagi"
 }
 
 // v1RadiusHealth godoc

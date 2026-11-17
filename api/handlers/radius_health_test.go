@@ -250,3 +250,42 @@ func TestRadiusHealth_HostTakDikenal503(t *testing.T) {
 		t.Fatalf("galat tak menyebut alamat: %v", err)
 	}
 }
+
+// Port UDP tertutup (FreeRADIUS belum di-restart sesudah setup.sh menambah
+// socket pemeriksa) → pesan "socket pemeriksa belum aktif" + cara restart,
+// BUKAN "tidak menjawab dalam 3 detik" yang menyuruh mencari masalah lain.
+// Temuan peninjau API-1, 17 Nov 2026.
+func TestRadiusHealth_PortTertutupMenyuruhRestart(t *testing.T) {
+	pc, err := net.ListenPacket("udp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := pc.LocalAddr().String()
+	pc.Close() // port kini tertutup → ICMP port-unreachable
+
+	_, err = periksaRadius(context.Background(), addr, secretUji, 2*time.Second, 500*time.Millisecond)
+	if err == nil {
+		t.Fatal("harus galat")
+	}
+	if !strings.Contains(err.Error(), "socket pemeriksa belum aktif") {
+		t.Fatalf("pesan tak menyebut socket belum aktif: %v", err)
+	}
+	// 127.0.0.1 = instance freeradius-manager, bukan docker.
+	if !strings.Contains(err.Error(), "aktifkan-kesehatan") || strings.Contains(err.Error(), "docker compose") {
+		t.Fatalf("petunjuk restart salah untuk alamat loopback: %v", err)
+	}
+}
+
+func TestPetunjukRestart_DockerLawanManager(t *testing.T) {
+	for addr, mau := range map[string]string{
+		"freeradius:18190": "docker compose restart freeradius",
+		"172.20.0.3:18190": "docker compose restart freeradius",
+		"127.0.0.1:20000":  "aktifkan-kesehatan",
+		"localhost:20000":  "aktifkan-kesehatan",
+		"[::1]:20000":      "aktifkan-kesehatan",
+	} {
+		if got := petunjukRestart(addr); !strings.Contains(got, mau) {
+			t.Errorf("petunjukRestart(%q) = %q, mau memuat %q", addr, got, mau)
+		}
+	}
+}

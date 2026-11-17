@@ -12,7 +12,10 @@
 set -euo pipefail
 
 STACK_DIR="${STACK_DIR:-/opt/freeradius-api}"
-TANDA="/var/lib/radius-appliance/firstboot-selesai"
+# TANDA & ISSUE bisa ditimpa HANYA untuk uji (scripts/test-setup.sh) —
+# appliance memakai bawaannya.
+TANDA="${TANDA:-/var/lib/radius-appliance/firstboot-selesai}"
+ISSUE="${ISSUE:-/etc/issue}"
 
 if [ -e "$TANDA" ]; then
   echo "firstboot sudah pernah jalan ($TANDA) — tidak diulang."
@@ -264,8 +267,8 @@ for u in $(awk -F: '$3>=1000 && $3<65534 && $7 !~ /(nologin|false)$/ {print $1}'
   if id -nG "$u" 2>/dev/null | tr ' ' '\n' | grep -qx sudo; then AKUN="$u"; break; fi
 done
 
-install -d -m 755 /var/lib/radius-appliance
-cat > /etc/issue <<EOF
+install -d -m 755 "$(dirname "$TANDA")"
+cat > "$ISSUE" <<EOF
 
   Appliance RADIUS — Netovas
   --------------------------
@@ -284,6 +287,6 @@ cat > /etc/issue <<EOF
   dari layar ini.
 
 EOF
-chmod 644 /etc/issue
+chmod 644 "$ISSUE"
 date -Is > "$TANDA"
 echo "firstboot selesai."
