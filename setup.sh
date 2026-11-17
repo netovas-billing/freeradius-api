@@ -35,7 +35,7 @@ muatEnv() {
   local baris kunci nilai
   while IFS= read -r baris; do
     case "$baris" in
-      FR_TAG=*|DB_PASSWORD=*)
+      FR_TAG=*|DB_USER=*|DB_PASSWORD=*)
         kunci="${baris%%=*}"; nilai="${baris#*=}"
         # `if`, bukan `[ … ] && …`: di bawah `set -e` bentuk kedua membuat
         # skrip KELUAR begitu ada baris berkunci cocok tapi nilainya kosong
@@ -53,6 +53,19 @@ muatEnv
 FR_TAG="${FR_TAG:-3.2.10}"
 IMAGE="freeradius/freeradius-server:${FR_TAG}"
 DB_PASSWORD="${DB_PASSWORD:-radiuspass_ganti}"
+# User DB SAMA dengan yang dibaca docker-compose.yml (MARIADB_USER & api:
+# ${DB_USER:-radius}). Sampai 17 Nov 2026 login di raddb DITULIS MATI "radius":
+# server yang .env-nya DB_USER=radiuspali (Pali) membuat MariaDB & api memakai
+# radiuspali, FreeRADIUS tetap login "radius" → "Access denied", container
+# restart terus dan `docker compose logs` KOSONG (galat masuk berkas log).
+DB_USER="${DB_USER:-radius}"
+# Nilai ini masuk ke pola sed dan konfigurasi FreeRADIUS — tolak karakter yang
+# bisa memecah keduanya daripada menanam login yang rusak diam-diam.
+case "$DB_USER" in
+  *[!A-Za-z0-9_.-]*)
+    echo "DB_USER di .env hanya boleh huruf, angka, titik, garis bawah, strip: '$DB_USER'" >&2
+    exit 1 ;;
+esac
 
 # ---- Cleanup symlink dangling dari run gagal ----
 if [ -L freeradius/raddb ] && [ ! -e freeradius/raddb ]; then
@@ -107,8 +120,16 @@ if [ -f "$SQL_CONF" ]; then
   sed -i \
     -e 's|^#\?\s*server\s*=\s*"localhost"|	server = "db"|' \
     -e 's|^#\?\s*port\s*=\s*3306|	port = 3306|' \
-    -e 's|^#\?\s*login\s*=\s*"radius"|	login = "radius"|' \
     "$SQL_CONF"
+
+  # Login: dari DB_USER, cocokkan NILAI APA PUN (idempoten & ikut .env yang
+  # diganti) — pola yang sama dengan sandi di bawah.
+  sed -i -E 's|^#?([[:space:]]*)login[[:space:]]*=[[:space:]]*".*"|\1login = "'"$DB_USER"'"|' \
+    "$SQL_CONF"
+  grep -q "login = \"$DB_USER\"" "$SQL_CONF" || {
+    echo "GAGAL menanam user DB ($DB_USER) ke $SQL_CONF — berhenti, auth akan mati senyap" >&2
+    exit 1
+  }
 
   # Sandi: cocokkan NILAI APA PUN, bukan hanya nilai template. Itu yang
   # membuat langkah ini idempoten DAN benar saat .env sudah diganti.
@@ -184,17 +205,18 @@ Bootstrap selesai.
 Yang otomatis diaplikasikan:
   - raddb/ + initdb/ schema dari image FreeRADIUS
   - chmod go+rX di raddb/ (freerad UID di container bisa baca)
-  - mods-enabled/sql symlink, dialect=mysql, server=db, login=radius
+  - mods-enabled/sql symlink, dialect=mysql, server=db
   - TLS block ke DB di-comment (koneksi internal Docker)
   - sites-enabled/dynamic-clients aktif (overlay dari freeradius/overlay/)
   - clients.conf: tambah blok `client dynamic` (0.0.0.0/0 — narrow di prod!)
-  - sandi DB dari .env DITANAM ke mods-available/sql, lalu DIVERIFIKASI
+  - user (DB_USER) & sandi DB dari .env DITANAM ke mods-available/sql,
+    lalu DIVERIFIKASI
   - .env dengan API_KEY random 32-byte
 
 Sebelum jalan:
   - Periksa freeradius/raddb/clients.conf — ganti subnet `client dynamic`
     dari 0.0.0.0/0 ke range mitra Anda (mis. VPN tunnel) untuk production.
-  - Ubah DB_PASSWORD di .env lalu jalankan ULANG berkas ini; sandinya
+  - Ubah DB_USER/DB_PASSWORD di .env lalu jalankan ULANG berkas ini; keduanya
     ditanam ke raddb dari .env, bukan dari konstanta, dan hasilnya diperiksa.
     (Sampai 13 Okt 2026 itu TIDAK terjadi: raddb memegang sandi lama dan
     FreeRADIUS gagal konek DB tanpa pesan yang menunjuk sebabnya.)

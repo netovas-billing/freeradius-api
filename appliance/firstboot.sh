@@ -79,6 +79,16 @@ fi
 
 # shellcheck disable=SC1091
 DB_PASSWORD="$(grep '^DB_PASSWORD=' .env | cut -d= -f2-)"
+# User DB juga dari .env (bawaan radius, sama dengan docker-compose.yml) —
+# login di raddb pernah ditulis mati "radius" sehingga .env ber-DB_USER lain
+# membuat FreeRADIUS ditolak MariaDB (17 Nov 2026, server Pali).
+DB_USER="$(grep '^DB_USER=' .env | cut -d= -f2-)"
+DB_USER="${DB_USER:-radius}"
+case "$DB_USER" in
+  *[!A-Za-z0-9_.-]*)
+    echo "DB_USER di .env hanya boleh huruf, angka, titik, garis bawah, strip: '$DB_USER'" >&2
+    exit 1 ;;
+esac
 
 # ---- 3. Tanam sandi DB ke raddb — HARUS DI SINI ----------------------------
 #
@@ -89,7 +99,12 @@ DB_PASSWORD="$(grep '^DB_PASSWORD=' .env | cut -d= -f2-)"
 # SINI, sesudah sandinya dibangkitkan.
 SQL_CONF="freeradius/raddb/mods-available/sql"
 if [ -f "$SQL_CONF" ]; then
-  echo "menanam sandi DB ke $SQL_CONF ..."
+  echo "menanam user & sandi DB ke $SQL_CONF ..."
+  sed -i -E 's|^#?([[:space:]]*)login[[:space:]]*=[[:space:]]*".*"|\1login = "'"${DB_USER}"'"|' "$SQL_CONF"
+  grep -q "login = \"${DB_USER}\"" "$SQL_CONF" || {
+    echo "GAGAL menanam user DB (${DB_USER}) ke $SQL_CONF — jangan lanjut, auth akan mati senyap" >&2
+    exit 1
+  }
   # Mencocokkan NILAI APA PUN, bukan hanya nilai template — itu yang membuat
   # langkah ini idempoten. `^#?` ikut WAJIB: di template FreeRADIUS barisnya
   # BERKOMENTAR dengan `#` di kolom 0 sebelum tab (`#\tpassword = "radpass"`),

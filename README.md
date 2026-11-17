@@ -34,7 +34,13 @@ ke raddb adalah bawaan `.env.example`. Mau menggantinya? Ganti **sebelum** DB
 pertama lahir, atau buang volumenya — MariaDB hanya memakai
 `MARIADB_PASSWORD` saat volume masih kosong, jadi mengganti sandi di `.env`
 pada DB yang sudah ada menghasilkan FreeRADIUS dan api yang gagal konek tanpa
-sebab yang kelihatan:
+sebab yang kelihatan. `DB_USER` juga boleh diganti (mis. `radiuspali`):
+`setup.sh` menanam user DAN sandi dari `.env` ke `mods-available/sql` lalu
+memeriksanya. Sebelum 17 Nov 2026 user di raddb ditulis mati `radius`, jadi
+`DB_USER` lain membuat FreeRADIUS ditolak MariaDB ("Access denied") dan restart
+terus — dengan `docker compose logs` KOSONG, karena galatnya masuk berkas log di
+dalam container. Untuk melihat galat semacam itu:
+`docker compose run --rm --entrypoint freeradius freeradius -X`.
 
 ```bash
 docker compose down -v        # HAPUS data DB — hanya di lab
