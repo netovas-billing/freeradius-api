@@ -47,19 +47,68 @@ DB_NAME="radiusdb"
 # untuk menangkap dump KOSONG, bukan untuk menilai kelengkapan.
 MIN_SQL_BYTES=1024
 
+# --- Stack Docker Compose (freeradius-api manual / appliance) ---
+#
+# Instance freeradius-manager memakai MariaDB di host + nilai di atas yang
+# ditambal per-instance. Stack Docker TIDAK: MariaDB ada di container
+# `radius-db`, host tak punya klien mariadb-dump, kredensial ada di `.env`.
+# Mode Docker dipakai bila: ada `.env` di direktori skrip DAN container
+# radius-db berjalan DAN host tak punya mariadb-dump (sama seperti
+# autoclearzombie.sh, 18 Nov 2026 — server LintasHome PALI).
+#
+# Tujuan unggah di mode Docker bisa diatur di .env (BACKUP_REMOTE,
+# BACKUP_BUCKET, BACKUP_PATH). Bawaannya "radiusdb/<DB_NAME>/", BUKAN
+# "radiusdb/": beberapa server yang berbagi bucket dulu saling menimpa
+# berkas <tanggal>.sql.gz yang sama.
+DIR_SKRIP="$(cd "$(dirname "$0")" && pwd)"
+PAKAI_DOCKER=""
+if ! command -v mariadb-dump >/dev/null 2>&1 && [ -f "${DIR_SKRIP}/.env" ] \
+   && command -v docker >/dev/null 2>&1 \
+   && [ "$(docker inspect -f '{{.State.Running}}' radius-db 2>/dev/null)" = "true" ]; then
+    PAKAI_DOCKER=1
+    PATH_DARI_ENV=""
+    while IFS= read -r baris; do
+        case "$baris" in
+            DB_USER=*) [ -n "${baris#*=}" ] && DB_USER="${baris#*=}" ;;
+            DB_PASSWORD=*) [ -n "${baris#*=}" ] && DB_PASS="${baris#*=}" ;;
+            DB_NAME=*) [ -n "${baris#*=}" ] && DB_NAME="${baris#*=}" ;;
+            BACKUP_REMOTE=*) [ -n "${baris#*=}" ] && REMOTE="${baris#*=}" ;;
+            BACKUP_BUCKET=*) [ -n "${baris#*=}" ] && BUCKET="${baris#*=}" ;;
+            BACKUP_PATH=*) [ -n "${baris#*=}" ] && PATH_DARI_ENV="${baris#*=}" ;;
+        esac
+    done < "${DIR_SKRIP}/.env"
+    BACKUP_PATH="${PATH_DARI_ENV:-radiusdb/${DB_NAME}}"
+fi
+
+# rclone dipastikan ADA sebelum dump: dulu kegagalannya baru terlihat sesudah
+# dump selesai, sebagai "command not found" di tengah keluaran.
+if ! command -v rclone >/dev/null 2>&1; then
+    echo "ERROR: rclone tidak terpasang — pasang (apt install rclone) lalu buat remote '${REMOTE}' dengan 'rclone config'" >&2
+    exit 1
+fi
+
 # Create temp directory
 mkdir -p "${TEMP_DIR}"
 
 echo "Starting backup at $(date)"
-mariadb-dump --skip-ssl \
-  -h "${DB_HOST}" \
-  --port "${DB_PORT}" \
-  -u "${DB_USER}" \
-  -p"${DB_PASS}" \
-  "${DB_NAME}" \
-  --single-transaction \
-  --quick \
-  --lock-tables=false | gzip > "${LOCAL_FILE}"
+# Sandi lewat MYSQL_PWD, bukan -p<sandi>: argumen proses terbaca `ps` semua user.
+if [ -n "${PAKAI_DOCKER}" ]; then
+    docker exec -e MYSQL_PWD="${DB_PASS}" radius-db mariadb-dump \
+      -u "${DB_USER}" \
+      "${DB_NAME}" \
+      --single-transaction \
+      --quick \
+      --lock-tables=false | gzip > "${LOCAL_FILE}"
+else
+    MYSQL_PWD="${DB_PASS}" mariadb-dump --skip-ssl \
+      -h "${DB_HOST}" \
+      --port "${DB_PORT}" \
+      -u "${DB_USER}" \
+      "${DB_NAME}" \
+      --single-transaction \
+      --quick \
+      --lock-tables=false | gzip > "${LOCAL_FILE}"
+fi
 DUMP_STATUS=$?
 
 if [ ${DUMP_STATUS} -ne 0 ] || [ ! -s "${LOCAL_FILE}" ]; then

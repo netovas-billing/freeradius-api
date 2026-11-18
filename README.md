@@ -282,6 +282,30 @@ dua skrip pemeliharaan, yang ditambal manager lewat pencocokan `^KEY=` di kolom
 
 Prosedur appliance lengkap: **`appliance/README.md`**.
 
+### Skrip pemeliharaan di stack Docker
+
+`autoclearzombie.sh` dan `autobackups3.sh` mengenali stack Docker sendiri
+(host tanpa klien `mariadb`, `.env` di sebelah skrip, container `radius-db`
+berjalan): kredensial diambil dari `.env`, SQL lewat `docker exec radius-db`.
+Sebelum 18 Nov 2026 keduanya gagal di stack Docker ("mariadb: command not
+found") — sesi zombie tak pernah dibersihkan dan backup tak pernah dibuat.
+
+| Kunci `.env` | Untuk | Bawaan |
+|---|---|---|
+| `ZOMBIE_THRESHOLD_MINUTES` | ambang sesi tanpa Interim-Update | 10 — **router ber-interim 10 menit butuh 25** |
+| `BACKUP_REMOTE` / `BACKUP_BUCKET` | tujuan `rclone` | `s3` / `backup-db` |
+| `BACKUP_PATH` | folder di bucket | `radiusdb/<DB_NAME>` (bukan `radiusdb/`, supaya server yang berbagi bucket tak saling menimpa) |
+
+Jadwalkan dari host (`crontab -e` sebagai root):
+
+```
+*/5 * * * * /root/freeradius-api/autoclearzombie.sh >> /var/log/autoclearzombie.log 2>&1
+30 2 * * *  /root/freeradius-api/autobackups3.sh   >> /var/log/autobackups3.log 2>&1
+```
+
+`autobackups3.sh` butuh `rclone` terpasang di host dan remote dibuat dengan
+`rclone config`; tanpa itu ia berhenti dengan pesan jelas sebelum men-dump.
+
 ## Production notes
 
 - Ganti semua secret di `.env`. Jangan commit `.env` ke git.
